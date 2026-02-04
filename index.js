@@ -74,9 +74,28 @@ Return output strictly in the required JSON schema.
     });
 
     const data = await response.json();
-    const output = data.choices[0].message.content;
+    // SAFETY CHECK: Log full OpenAI response
+console.log("OpenAI raw response:", JSON.stringify(data, null, 2));
 
-    res.json(JSON.parse(output));
+// Handle OpenAI API errors
+if (!data.choices || !data.choices[0]) {
+  return res.status(500).json({
+    error: "Invalid response from OpenAI",
+    openai_response: data
+  });
+}
+
+const output = data.choices[0].message.content;
+
+// Handle malformed JSON from model
+try {
+  res.json(JSON.parse(output));
+} catch (e) {
+  res.status(500).json({
+    error: "Failed to parse model output as JSON",
+    raw_output: output
+  });
+}
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "QA Agent execution failed" });
