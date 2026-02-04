@@ -19,26 +19,17 @@ You are an admissions Intake QA Agent for a US education institution.
 Your role is NOT to approve or reject applications.
 
 Your role is to:
-1. Evaluate whether the uploaded documents sufficiently support the declared application data.
-2. Identify ambiguities or inconsistencies that may slow or block human review.
+1. Evaluate whether uploaded documents sufficiently support declared application data.
+2. Identify ambiguities or inconsistencies that may slow human review.
 3. Flag explicit review risks with clear reasons and recommended human actions.
-4. Produce a concise, human-readable QA summary for admissions staff.
+4. Produce a concise, human-readable QA summary.
 
-You MUST:
+Rules:
 - Be conservative.
-- Avoid speculation.
-- Avoid scoring or probability language.
-- Avoid approval or rejection decisions.
-
-You MUST NOT:
-- Change application data.
-- Recommend acceptance or rejection.
-- Invent missing information.
-
-If no meaningful risks or ambiguities are found, explicitly state that the application appears review-ready.
-
-Your output MUST follow the provided JSON schema exactly.
-Do not include any text outside the JSON response.
+- Do NOT speculate.
+- Do NOT score or rank.
+- Do NOT approve or reject.
+- Output STRICT JSON only.
 `;
 
     const userPrompt = `
@@ -54,55 +45,87 @@ ${JSON.stringify(declared_data, null, 2)}
 SUPPORTING DOCUMENTS:
 ${JSON.stringify(documents, null, 2)}
 
-Return output strictly in the required JSON schema.
+Return output strictly in this JSON schema:
+
+{
+  "qa_completion_status": "Completed",
+  "review_risks": [
+    {
+      "risk_type": "string",
+      "reason": "string",
+      "recommended_action": "string"
+    }
+  ],
+  "qa_summary": "string"
+}
 `;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        temperature: 0,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ]
-      })
+    const openaiResponse = await fetch(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          temperature: 0,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ]
+        })
+      }
+    );
+
+    const data = await openaiResponse.json();
+
+    // 🔎 Log raw OpenAI response for safety
+    console.log("OpenAI raw response:", JSON.stringify(data, null, 2));
+
+    // ❌ OpenAI error handling
+    if (data.error) {
+      return res.status(500).json({
+        error: "OpenAI API error",
+        details: data.error
+      });
+    }
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      return res.status(500).json({
+        error: "Invalid OpenAI response structure",
+        openai_response: data
+      });
+    }
+
+    // 🧹 Clean model output
+    let output = data.choices[0].message.content || "";
+    output = output
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+    try {
+      const parsed = JSON.parse(output);
+      return res.json(parsed);
+    } catch (parseError) {
+      return res.status(500).json({
+        error: "Failed to parse model output as JSON",
+        raw_output: output
+      });
+    }
+
+  } catch (err) {
+    console.error("Unhandled server error:", err);
+    return res.status(500).json({
+      error: "Internal server error",
+      message: err.message
     });
+  }
+});
 
-    const data = await response.json();
-    // SAFETY CHECK: Log full OpenAI response
-console.log("OpenAI raw response:", JSON.stringify(data, null, 2));
-
-// Handle OpenAI API errors
-if (!data.choices || !data.choices[0]) {
-  return res.status(500).json({
-    error: "Invalid response from OpenAI",
-    openai_response: data
-  });
-}
-
-let output = data.choices[0].message.content;
-
-// Remove markdown code fences if present
-output = output
-  .replace(/```json/g, "")
-  .replace(/```/g, "")
-  .trim();
-
-try {
-  const parsed = JSON.parse(output);
-  res.json(parsed);
-} catch (e) {
-  res.status(500).json({
-    error: "Failed to parse model output as JSON after cleanup",
-    raw_output: output
-  });
-}
-
+// ✅ REQUIRED for Render
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Intake QA Agent running on port ${PORT}`);
