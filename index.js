@@ -85,22 +85,23 @@ if (!data.choices || !data.choices[0]) {
   });
 }
 
-const output = data.choices[0].message.content;
+let output = data.choices[0].message.content;
 
-// Handle malformed JSON from model
+// Remove markdown code fences if present
+output = output
+  .replace(/```json/g, "")
+  .replace(/```/g, "")
+  .trim();
+
 try {
-  res.json(JSON.parse(output));
+  const parsed = JSON.parse(output);
+  res.json(parsed);
 } catch (e) {
   res.status(500).json({
-    error: "Failed to parse model output as JSON",
+    error: "Failed to parse model output as JSON after cleanup",
     raw_output: output
   });
 }
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "QA Agent execution failed" });
-  }
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
