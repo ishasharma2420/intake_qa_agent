@@ -54,9 +54,12 @@ app.post("/intake-qa-agent", async (req, res) => {
       });
     }
 
-    const lead = await fetchLead(leadId);
-    const activity = await fetchActivity(activityId);
-    const files = await fetchActivityFiles(activityId);
+   const lead = await fetchLead(leadId);
+
+return res.json({
+  status: "LEAD_FETCH_SUCCESS",
+  lead
+});
 
     console.log("===== LEAD DATA =====");
     console.log(JSON.stringify(lead, null, 2));
