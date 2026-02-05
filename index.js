@@ -23,10 +23,10 @@ async function lsqGet(endpoint, params = {}) {
   return response.data;
 }
 
-async function fetchLead(leadId) {
+async function fetchLeadByGuid(leadGuid) {
   return await lsqGet(
-    "/v2/LeadManagement.svc/Leads.Get",
-    { leadId }
+    "/v2/LeadManagement.svc/Leads.GetById",
+    { leadId: leadGuid }
   );
 }
 
