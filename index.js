@@ -8,7 +8,9 @@ app.use(express.json());
 // LeadSquared API Config
 // =======================
 
-const LSQ_HOST = process.env.LSQ_HOST; // e.g. https://api-us11.leadsquared.com
+const LSQ_HOST = process.env.LSQ_HOST; 
+// Example: https://api-us11.leadsquared.com
+
 const LSQ_ACCESS_KEY = process.env.LSQ_ACCESS_KEY;
 const LSQ_SECRET_KEY = process.env.LSQ_SECRET_KEY;
 
@@ -29,14 +31,14 @@ async function lsqGet(endpoint, params = {}) {
 }
 
 // =======================
-// Lead fetch using GUID
+// Fetch Lead by GUID (CORRECT API)
 // =======================
 
 async function fetchLeadByGuid(leadGuid) {
   return await lsqGet(
-    "/v2/LeadManagement.svc/Leads.GetById",
+    "/v2/LeadManagement.svc/Leads.GetByLeadGuid",
     {
-      id: leadGuid   // 🔴 THIS WAS THE BUG
+      leadGuid: leadGuid
     }
   );
 }
