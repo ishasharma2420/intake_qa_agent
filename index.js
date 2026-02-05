@@ -82,6 +82,7 @@ app.post("/intake-qa-agent", async (req, res) => {
     });
   }
 });
+/*
     const systemPrompt = `
 You are an admissions Intake QA Agent for a US education institution.
 
@@ -193,6 +194,8 @@ Return output strictly in this JSON schema:
     });
   }
 });
+
+*/
 
 // ✅ REQUIRED for Render
 const PORT = process.env.PORT || 3000;
