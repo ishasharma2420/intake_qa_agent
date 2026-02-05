@@ -1,18 +1,87 @@
 import express from "express";
 import fetch from "node-fetch";
+import axios from "axios";
 
 const app = express();
 app.use(express.json());
 
+// =======================
+// LeadSquared API Helpers
+// =======================
+
+const LSQ_HOST = process.env.LSQ_HOST;
+const LSQ_ACCESS_KEY = process.env.LSQ_ACCESS_KEY;
+const LSQ_SECRET_KEY = process.env.LSQ_SECRET_KEY;
+
+async function lsqGet(endpoint, params = {}) {
+  const response = await axios.get(`${LSQ_HOST}${endpoint}`, {
+    params: {
+      accessKey: LSQ_ACCESS_KEY,
+      secretKey: LSQ_SECRET_KEY,
+      ...params
+    }
+  });
+  return response.data;
+}
+
+async function fetchLead(leadId) {
+  return await lsqGet(
+    "/v2/LeadManagement.svc/Leads.Get",
+    { leadId }
+  );
+}
+
+async function fetchActivity(activityId) {
+  return await lsqGet(
+    "/v2/ActivityManagement.svc/Activity.Get",
+    { activityId }
+  );
+}
+
+async function fetchActivityFiles(activityId) {
+  return await lsqGet(
+    "/v2/ActivityManagement.svc/Activity.GetFileAttachments",
+    { activityId }
+  );
+}
+
 app.post("/intake-qa-agent", async (req, res) => {
   try {
-    const {
-      application_metadata,
-      program_intent,
-      declared_data,
-      documents
-    } = req.body;
+    const { leadId, activityId } = req.body;
 
+    if (!leadId || !activityId) {
+      return res.status(400).json({
+        error: "leadId and activityId are required"
+      });
+    }
+
+    const lead = await fetchLead(leadId);
+    const activity = await fetchActivity(activityId);
+    const files = await fetchActivityFiles(activityId);
+
+    console.log("===== LEAD DATA =====");
+    console.log(JSON.stringify(lead, null, 2));
+
+    console.log("===== ACTIVITY DATA =====");
+    console.log(JSON.stringify(activity, null, 2));
+
+    console.log("===== FILE ATTACHMENTS =====");
+    console.log(JSON.stringify(files, null, 2));
+
+    return res.json({
+      status: "LSQ_FETCH_SUCCESS",
+      leadFound: !!lead,
+      activityFound: !!activity,
+      fileCount: files?.length || 0
+    });
+
+  } catch (error) {
+    console.error("LSQ FETCH ERROR:", error?.response?.data || error.message);
+    return res.status(500).json({
+      error: "Failed to fetch data from LeadSquared"
+    });
+  }
+});
     const systemPrompt = `
 You are an admissions Intake QA Agent for a US education institution.
 
