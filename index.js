@@ -73,14 +73,16 @@ app.post("/intake-qa-agent", async (req, res) => {
       activityFound: !!activity,
       fileCount: files?.length || 0
     });
+ } catch (error) {
+  const lsqError = error?.response?.data || error.message;
 
-  } catch (error) {
-    console.error("LSQ FETCH ERROR:", error?.response?.data || error.message);
-    return res.status(500).json({
-      error: "Failed to fetch data from LeadSquared"
-    });
-  }
-});
+  console.error("LSQ FETCH ERROR FULL:", JSON.stringify(lsqError, null, 2));
+
+  return res.status(500).json({
+    error: "Failed to fetch data from LeadSquared",
+    details: lsqError
+  });
+}
 /*
     const systemPrompt = `
 You are an admissions Intake QA Agent for a US education institution.
