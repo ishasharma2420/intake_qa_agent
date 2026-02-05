@@ -5,85 +5,96 @@ const app = express();
 app.use(express.json());
 
 // =======================
-// LeadSquared API Config
+// ENV CONFIG
 // =======================
 
-const LSQ_HOST = process.env.LSQ_HOST; 
-// Example: https://api-us11.leadsquared.com
-
+const LSQ_HOST = process.env.LSQ_HOST; // https://api-us11.leadsquared.com
 const LSQ_ACCESS_KEY = process.env.LSQ_ACCESS_KEY;
 const LSQ_SECRET_KEY = process.env.LSQ_SECRET_KEY;
 
 // =======================
-// Generic LSQ GET helper
+// GENERIC LSQ CALL
 // =======================
 
-async function lsqGet(endpoint, params = {}) {
-  const response = await axios.get(`${LSQ_HOST}${endpoint}`, {
-    params: {
-      accessKey: LSQ_ACCESS_KEY,
-      secretKey: LSQ_SECRET_KEY,
-      ...params
+async function lsqPost(endpoint, body = {}) {
+  const response = await axios.post(
+    `${LSQ_HOST}${endpoint}`,
+    body,
+    {
+      params: {
+        accessKey: LSQ_ACCESS_KEY,
+        secretKey: LSQ_SECRET_KEY
+      },
+      headers: {
+        "Content-Type": "application/json"
+      }
     }
-  });
-
+  );
   return response.data;
 }
 
 // =======================
-// Fetch Lead by GUID (CORRECT API)
+// FETCH LEAD BY EMAIL
 // =======================
 
-async function fetchLeadByGuid(leadGuid) {
-  return await lsqGet(
-    "/v2/LeadManagement.svc/Leads.GetByLeadGuid",
+async function fetchLeadByEmail(email) {
+  return await lsqPost(
+    "/v2/LeadManagement.svc/Leads.GetByEmail",
     {
-      leadGuid: leadGuid
+      EmailAddress: email
     }
   );
 }
 
 // =======================
-// API Route
+// API ENDPOINT
 // =======================
 
 app.post("/intake-qa-agent", async (req, res) => {
   try {
-    const { leadId } = req.body;
+    const { email } = req.body;
 
-    if (!leadId) {
+    if (!email) {
       return res.status(400).json({
-        error: "leadId (GUID) is required"
+        error: "email is required"
       });
     }
 
-    const lead = await fetchLeadByGuid(leadId);
+    const leadResponse = await fetchLeadByEmail(email);
 
-    console.log("===== LEAD DATA FROM LSQ =====");
+    if (!Array.isArray(leadResponse) || leadResponse.length === 0) {
+      return res.status(404).json({
+        error: "No lead found for this email"
+      });
+    }
+
+    // LeadSquared always returns an array
+    const lead = leadResponse[0];
+
+    console.log("===== LEAD FETCHED =====");
     console.log(JSON.stringify(lead, null, 2));
 
     return res.json({
       status: "LEAD_FETCH_SUCCESS",
-      lead
+      prospectId: lead.ProspectID,
+      prospectAutoId: lead.ProspectAutoId,
+      email: lead.EmailAddress,
+      rawLead: lead
     });
 
   } catch (error) {
-    const lsqError = error?.response?.data || error.message;
-
-    console.error(
-      "LSQ FETCH ERROR FULL:",
-      JSON.stringify(lsqError, null, 2)
-    );
+    const details = error?.response?.data || error.message;
+    console.error("LSQ ERROR:", JSON.stringify(details, null, 2));
 
     return res.status(500).json({
-      error: "Failed to fetch data from LeadSquared",
-      details: lsqError
+      error: "Failed to fetch lead from LeadSquared",
+      details
     });
   }
 });
 
 // =======================
-// Render Port Binding
+// SERVER
 // =======================
 
 const PORT = process.env.PORT || 3000;
