@@ -5,12 +5,16 @@ const app = express();
 app.use(express.json());
 
 // =======================
-// LeadSquared API Helpers
+// LeadSquared API Config
 // =======================
 
-const LSQ_HOST = process.env.LSQ_HOST;
+const LSQ_HOST = process.env.LSQ_HOST; // e.g. https://api-us11.leadsquared.com
 const LSQ_ACCESS_KEY = process.env.LSQ_ACCESS_KEY;
 const LSQ_SECRET_KEY = process.env.LSQ_SECRET_KEY;
+
+// =======================
+// Generic LSQ GET helper
+// =======================
 
 async function lsqGet(endpoint, params = {}) {
   const response = await axios.get(`${LSQ_HOST}${endpoint}`, {
@@ -20,29 +24,26 @@ async function lsqGet(endpoint, params = {}) {
       ...params
     }
   });
+
   return response.data;
 }
+
+// =======================
+// Lead fetch using GUID
+// =======================
 
 async function fetchLeadByGuid(leadGuid) {
   return await lsqGet(
     "/v2/LeadManagement.svc/Leads.GetById",
-    { leadId: leadGuid }
+    {
+      id: leadGuid   // 🔴 THIS WAS THE BUG
+    }
   );
 }
 
-async function fetchActivity(activityId) {
-  return await lsqGet(
-    "/v2/ActivityManagement.svc/Activity.Get",
-    { activityId }
-  );
-}
-
-async function fetchActivityFiles(activityId) {
-  return await lsqGet(
-    "/v2/ActivityManagement.svc/Activity.GetFileAttachments",
-    { activityId }
-  );
-}
+// =======================
+// API Route
+// =======================
 
 app.post("/intake-qa-agent", async (req, res) => {
   try {
@@ -50,13 +51,13 @@ app.post("/intake-qa-agent", async (req, res) => {
 
     if (!leadId) {
       return res.status(400).json({
-        error: "leadId is required"
+        error: "leadId (GUID) is required"
       });
     }
 
     const lead = await fetchLeadByGuid(leadId);
 
-    console.log("===== LEAD DATA =====");
+    console.log("===== LEAD DATA FROM LSQ =====");
     console.log(JSON.stringify(lead, null, 2));
 
     return res.json({
@@ -66,7 +67,11 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   } catch (error) {
     const lsqError = error?.response?.data || error.message;
-    console.error("LSQ FETCH ERROR FULL:", JSON.stringify(lsqError, null, 2));
+
+    console.error(
+      "LSQ FETCH ERROR FULL:",
+      JSON.stringify(lsqError, null, 2)
+    );
 
     return res.status(500).json({
       error: "Failed to fetch data from LeadSquared",
@@ -74,7 +79,11 @@ app.post("/intake-qa-agent", async (req, res) => {
     });
   }
 });
-// ✅ REQUIRED for Render
+
+// =======================
+// Render Port Binding
+// =======================
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Intake QA Agent running on port ${PORT}`);
