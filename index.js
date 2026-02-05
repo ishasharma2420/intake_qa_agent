@@ -46,35 +46,22 @@ async function fetchActivityFiles(activityId) {
 
 app.post("/intake-qa-agent", async (req, res) => {
   try {
-    const { leadId, activityId } = req.body;
+    const { leadId } = req.body;
 
-    if (!leadId || !activityId) {
+    if (!leadId) {
       return res.status(400).json({
-        error: "leadId and activityId are required"
+        error: "leadId is required"
       });
     }
 
-   const lead = await fetchLead(leadId);
-
-return res.json({
-  status: "LEAD_FETCH_SUCCESS",
-  lead
-});
+    const lead = await fetchLead(leadId);
 
     console.log("===== LEAD DATA =====");
     console.log(JSON.stringify(lead, null, 2));
 
-    console.log("===== ACTIVITY DATA =====");
-    console.log(JSON.stringify(activity, null, 2));
-
-    console.log("===== FILE ATTACHMENTS =====");
-    console.log(JSON.stringify(files, null, 2));
-
     return res.json({
-      status: "LSQ_FETCH_SUCCESS",
-      leadFound: !!lead,
-      activityFound: !!activity,
-      fileCount: files?.length || 0
+      status: "LEAD_FETCH_SUCCESS",
+      lead
     });
 
   } catch (error) {
@@ -87,7 +74,6 @@ return res.json({
     });
   }
 });
-
 // ✅ REQUIRED for Render
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
