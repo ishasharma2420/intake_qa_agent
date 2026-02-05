@@ -54,7 +54,7 @@ app.post("/intake-qa-agent", async (req, res) => {
       });
     }
 
-    const lead = await fetchLead(leadId);
+    const lead = await fetchLeadByGuid(leadId);
 
     console.log("===== LEAD DATA =====");
     console.log(JSON.stringify(lead, null, 2));
