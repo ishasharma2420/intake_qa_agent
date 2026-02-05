@@ -41,10 +41,11 @@ async function fetchLeadByEmail(email) {
   return await lsqPost(
     "/v2/LeadManagement.svc/Leads.GetByEmail",
     {
-      EmailAddress: email
+      EmailAddresses: [email]
     }
   );
 }
+
 
 // =======================
 // API ENDPOINT
