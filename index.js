@@ -1,104 +1,76 @@
 import express from "express";
-import axios from "axios";
 
 const app = express();
 app.use(express.json());
 
 // =======================
-// ENV CONFIG
-// =======================
-
-const LSQ_HOST = process.env.LSQ_HOST; // https://api-us11.leadsquared.com
-const LSQ_ACCESS_KEY = process.env.LSQ_ACCESS_KEY;
-const LSQ_SECRET_KEY = process.env.LSQ_SECRET_KEY;
-
-// =======================
-// GENERIC LSQ CALL
-// =======================
-
-async function lsqPost(endpoint, body = {}) {
-  const response = await axios.post(
-    `${LSQ_HOST}${endpoint}`,
-    body,
-    {
-      params: {
-        accessKey: LSQ_ACCESS_KEY,
-        secretKey: LSQ_SECRET_KEY
-      },
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }
-  );
-  return response.data;
-}
-
-// =======================
-// FETCH LEAD BY EMAIL
-// =======================
-
-async function fetchLeadByEmail(email) {
-  return await lsqPost(
-    "/v2/LeadManagement.svc/Leads.GetByEmail",
-    {
-      EmailAddresses: [email]
-    }
-  );
-}
-
-
-// =======================
-// API ENDPOINT
+// Intake QA Webhook Entry
 // =======================
 
 app.post("/intake-qa-agent", async (req, res) => {
   try {
-    const { email } = req.body;
+    /**
+     * EXPECTED PAYLOAD FROM LEADSQUARED WEBHOOK
+     * (Same pattern as AI Intent Classifier)
+     */
+    const {
+      email,
+      leadGuid,          // optional, for logging
+      activityId,        // optional, for traceability
+      intake_status,     // e.g. "Under Review"
+      declared_gpa,
+      program,
+      documents          // optional for now (OCR later)
+    } = req.body;
 
+    // -----------------------
+    // Basic validation
+    // -----------------------
     if (!email) {
       return res.status(400).json({
-        error: "email is required"
+        error: "email is required in webhook payload"
       });
     }
 
-    const leadResponse = await fetchLeadByEmail(email);
+    // -----------------------
+    // TEMP: Echo payload back
+    // (This proves LSQ → Render works)
+    // -----------------------
+    console.log("===== INTAKE QA WEBHOOK RECEIVED =====");
+    console.log(JSON.stringify(req.body, null, 2));
 
-    if (!Array.isArray(leadResponse) || leadResponse.length === 0) {
-      return res.status(404).json({
-        error: "No lead found for this email"
-      });
-    }
-
-    // LeadSquared always returns an array
-    const lead = leadResponse[0];
-
-    console.log("===== LEAD FETCHED =====");
-    console.log(JSON.stringify(lead, null, 2));
+    /**
+     * NEXT STEPS (we will add after this works):
+     * 1. OCR documents (external service)
+     * 2. Call Intake QA LLM
+     * 3. Return structured QA output
+     */
 
     return res.json({
-      status: "LEAD_FETCH_SUCCESS",
-      prospectId: lead.ProspectID,
-      prospectAutoId: lead.ProspectAutoId,
-      email: lead.EmailAddress,
-      rawLead: lead
+      status: "WEBHOOK_RECEIVED_SUCCESSFULLY",
+      email,
+      activityId,
+      intake_status,
+      declared_gpa,
+      program,
+      message: "Ready for OCR + Intake QA processing"
     });
 
-  } catch (error) {
-    const details = error?.response?.data || error.message;
-    console.error("LSQ ERROR:", JSON.stringify(details, null, 2));
+  } catch (err) {
+    console.error("INTAKE QA AGENT ERROR:", err);
 
     return res.status(500).json({
-      error: "Failed to fetch lead from LeadSquared",
-      details
+      error: "Internal server error in Intake QA Agent",
+      details: err.message
     });
   }
 });
 
 // =======================
-// SERVER
+// Render Port Binding
 // =======================
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Intake QA Agent running on port ${PORT}`);
+  console.log(`Intake QA Agent listening on port ${PORT}`);
 });
