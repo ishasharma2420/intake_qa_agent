@@ -60,39 +60,39 @@ const ENGLISH_PROFICIENCY = {
 };
 
 /* =====================================================
-   MOCK OCR ASSEMBLER
+   MOCK OCR ASSEMBLER (SCHEMA NAMES)
 ===================================================== */
 
 function buildMockOCRText(lead) {
   const sections = [];
 
-  if (lead["High School Transcript Variant"]) {
+  if (lead.mx_High_School_Transcript_Variant) {
     sections.push(
-      `High School Transcript:\n${HIGH_SCHOOL_TRANSCRIPT[lead["High School Transcript Variant"]]}`
+      `High School Transcript:\n${HIGH_SCHOOL_TRANSCRIPT[lead.mx_High_School_Transcript_Variant]}`
     );
   }
 
-  if (lead["College Transcript Variant"]) {
+  if (lead.mx_College_Transcript_Variant) {
     sections.push(
-      `College Transcript:\n${COLLEGE_TRANSCRIPT[lead["College Transcript Variant"]]}`
+      `College Transcript:\n${COLLEGE_TRANSCRIPT[lead.mx_College_Transcript_Variant]}`
     );
   }
 
-  if (lead["Degree Certificate Variant"]) {
+  if (lead.mx_Degree_Certificate_Variant) {
     sections.push(
-      `Degree Certificate:\n${DEGREE_CERTIFICATE[lead["Degree Certificate Variant"]]}`
+      `Degree Certificate:\n${DEGREE_CERTIFICATE[lead.mx_Degree_Certificate_Variant]}`
     );
   }
 
-  if (lead["FAFSA Ack Variant"]) {
+  if (lead.mx_FAFSA_Ack_Variant) {
     sections.push(
-      `FAFSA Acknowledgement:\n${FAFSA_ACK[lead["FAFSA Ack Variant"]]}`
+      `FAFSA Acknowledgement:\n${FAFSA_ACK[lead.mx_FAFSA_Ack_Variant]}`
     );
   }
 
-  if (lead["English Proficiency Variant"]) {
+  if (lead.mx_English_Proficiency_Variant) {
     sections.push(
-      `English Proficiency:\n${ENGLISH_PROFICIENCY[lead["English Proficiency Variant"]]}`
+      `English Proficiency:\n${ENGLISH_PROFICIENCY[lead.mx_English_Proficiency_Variant]}`
     );
   }
 
@@ -115,7 +115,6 @@ app.post("/intake-qa-agent", async (req, res) => {
   console.log("---- MOCK OCR OUTPUT ----");
   console.log(mockOCRText);
 
-  // Phase 1 response
   return res.json({
     status: "WEBHOOK_RECEIVED_SUCCESSFULLY",
     message: "Mock OCR completed. Ready for Intake QA processing.",
