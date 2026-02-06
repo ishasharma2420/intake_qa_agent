@@ -1,10 +1,15 @@
 import express from "express";
+import OpenAI from "openai";
 
 const app = express();
 app.use(express.json());
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 /* =====================================================
-   MOCK OCR VARIANT DEFINITIONS (LOCKED)
+   MOCK OCR VARIANT DEFINITIONS (PHASE 1 – LOCKED)
 ===================================================== */
 
 // High School Transcript
@@ -17,26 +22,10 @@ const HIGH_SCHOOL_TRANSCRIPT = {
 
 // College Transcript
 const COLLEGE_TRANSCRIPT = {
-  V1: `
-GPA: 3.6 / 4.0
-Backlogs: 0
-Gap Years: 0
-`,
-  V2: `
-GPA: 3.0 / 4.0
-Backlogs: 1
-Gap Years: 0
-`,
-  V3: `
-GPA: 2.2 / 4.0
-Backlogs: 5
-Gap Years: 2
-`,
-  V4: `
-GPA: 1.9 / 4.0
-Backlogs: 7
-Gap Years: 3
-`
+  V1: "GPA: 3.6 / 4.0\nBacklogs: 0\nGap Years: 0",
+  V2: "GPA: 3.0 / 4.0\nBacklogs: 1\nGap Years: 0",
+  V3: "GPA: 2.2 / 4.0\nBacklogs: 5\nGap Years: 2",
+  V4: "GPA: 1.9 / 4.0\nBacklogs: 7\nGap Years: 3"
 };
 
 // Degree Certificate
@@ -60,7 +49,7 @@ const ENGLISH_PROFICIENCY = {
 };
 
 /* =====================================================
-   MOCK OCR ASSEMBLER (SCHEMA NAMES)
+   MOCK OCR ASSEMBLER
 ===================================================== */
 
 function buildMockOCRText(lead) {
@@ -100,6 +89,53 @@ function buildMockOCRText(lead) {
 }
 
 /* =====================================================
+   INTAKE QA LLM (PHASE 2 – EXPANDED SCHEMA)
+===================================================== */
+
+async function runIntakeQALLM(ocrText) {
+  const systemPrompt = `
+You are an Intake Quality Assurance Agent for a university admissions team.
+
+Evaluate the applicant strictly based on the provided information.
+
+Instructions:
+- Do NOT assume missing data.
+- Be conservative where information is incomplete.
+- Base conclusions only on evidence present.
+- Maintain a professional admissions-review tone.
+
+Return STRICT JSON ONLY in the following schema:
+
+{
+  "QA_Status": "PASS | REVIEW | FAIL",
+  "QA_Risk_Level": "LOW | MEDIUM | HIGH",
+  "QA_Summary": "2–3 sentence executive summary",
+
+  "QA_Key_Findings": [
+    "Bullet-style factual observations"
+  ],
+
+  "QA_Concerns": [
+    "Only include if applicable"
+  ],
+
+  "QA_Advisory_Notes": "Reasoned guidance explaining what should be considered next and why"
+}
+`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    temperature: 0,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: ocrText }
+    ]
+  });
+
+  return JSON.parse(response.choices[0].message.content);
+}
+
+/* =====================================================
    WEBHOOK ENDPOINT
 ===================================================== */
 
@@ -109,16 +145,21 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   const leadPayload = req.body;
 
-  // STEP 1: Mock OCR
+  // Phase 1: Mock OCR
   const mockOCRText = buildMockOCRText(leadPayload);
 
   console.log("---- MOCK OCR OUTPUT ----");
   console.log(mockOCRText);
 
+  // Phase 2: Intake QA LLM
+  const qaResult = await runIntakeQALLM(mockOCRText);
+
+  console.log("---- INTAKE QA RESULT ----");
+  console.log(qaResult);
+
   return res.json({
-    status: "WEBHOOK_RECEIVED_SUCCESSFULLY",
-    message: "Mock OCR completed. Ready for Intake QA processing.",
-    mock_ocr_text: mockOCRText
+    status: "INTAKE_QA_COMPLETED",
+    ...qaResult
   });
 });
 
