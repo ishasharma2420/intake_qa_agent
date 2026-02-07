@@ -45,17 +45,20 @@ const YES_NO_MAP = {
 function buildMockOCRText(lead) {
   let ocrText = "";
 
-  ocrText += HIGH_SCHOOL_TRANSCRIPT_MAP[
-    lead.mx_High_School_Transcript_Variant
-  ] || "";
+  ocrText +=
+    HIGH_SCHOOL_TRANSCRIPT_MAP[
+      lead.mx_High_School_Transcript_Variant
+    ] || "";
 
-  ocrText += COLLEGE_TRANSCRIPT_MAP[
-    lead.mx_College_Transcript_Variant
-  ] || "";
+  ocrText +=
+    COLLEGE_TRANSCRIPT_MAP[
+      lead.mx_College_Transcript_Variant
+    ] || "";
 
-  ocrText += DEGREE_CERTIFICATE_MAP[
-    lead.mx_Degree_Certificate_Variant
-  ] || "";
+  ocrText +=
+    DEGREE_CERTIFICATE_MAP[
+      lead.mx_Degree_Certificate_Variant
+    ] || "";
 
   if (lead.mx_FAFSA_Ack_Variant) {
     ocrText += "FAFSA Acknowledgement:\n";
@@ -92,15 +95,12 @@ Return STRICT JSON ONLY in the following schema:
   "QA_Status": "PASS | REVIEW | FAIL",
   "QA_Risk_Level": "LOW | MEDIUM | HIGH",
   "QA_Summary": "2–3 sentence executive summary",
-
   "QA_Key_Findings": [
     "Bullet-style factual observations"
   ],
-
   "QA_Concerns": [
     "Only include if applicable"
   ],
-
   "QA_Advisory_Notes": "Reasoned guidance explaining what should be considered next and why"
 }
 `;
@@ -125,18 +125,33 @@ app.post("/intake-qa-agent", async (req, res) => {
   console.log("---- INTAKE QA WEBHOOK RECEIVED ----");
   console.log(JSON.stringify(req.body, null, 2));
 
-  // ✅ IMPORTANT FIX: normalize LSQ payload
-  const leadPayload = req.body.Current || req.body;
+  // ✅ Normalize LeadSquared payload
+  const leadPayload = req.body.Current || null;
+
+  // 🚫 HARD STOP: ignore non-intake / empty webhook invocations
+  if (
+    !leadPayload ||
+    (
+      !leadPayload.mx_High_School_Transcript_Variant &&
+      !leadPayload.mx_College_Transcript_Variant &&
+      !leadPayload.mx_Degree_Certificate_Variant &&
+      !leadPayload.mx_FAFSA_Ack_Variant &&
+      !leadPayload.mx_English_Proficiency_Variant
+    )
+  ) {
+    console.log("⚠️ Skipping Intake QA: no variant data present");
+    return res.status(200).json({
+      status: "IGNORED_NON_INTAKE_EVENT"
+    });
+  }
 
   // Phase 1: Mock OCR
   const mockOCRText = buildMockOCRText(leadPayload);
-
   console.log("---- MOCK OCR OUTPUT ----");
   console.log(mockOCRText);
 
   // Phase 2: Intake QA LLM
   const qaResult = await runIntakeQALLM(mockOCRText);
-
   console.log("---- INTAKE QA RESULT ----");
   console.log(qaResult);
 
