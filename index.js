@@ -126,7 +126,10 @@ app.post("/intake-qa-agent", async (req, res) => {
   console.log(JSON.stringify(req.body, null, 2));
 
   // ✅ Normalize LeadSquared payload
-  const leadPayload = req.body.Current || null;
+  const leadPayload =
+  req.body?.Current ||
+  req.body?.Data?.Current ||
+  null;
 
   // 🚫 HARD STOP: ignore non-intake / empty webhook invocations
   if (
