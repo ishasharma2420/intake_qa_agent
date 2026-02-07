@@ -143,7 +143,8 @@ app.post("/intake-qa-agent", async (req, res) => {
   console.log("---- INTAKE QA WEBHOOK RECEIVED ----");
   console.log(JSON.stringify(req.body, null, 2));
 
-  const leadPayload = req.body;
+  // ✅ IMPORTANT FIX: normalize LSQ payload
+  const leadPayload = req.body.Current || req.body;
 
   // Phase 1: Mock OCR
   const mockOCRText = buildMockOCRText(leadPayload);
