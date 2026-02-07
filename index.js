@@ -12,40 +12,30 @@ const openai = new OpenAI({
    MOCK OCR VARIANT DEFINITIONS (PHASE 1 – LOCKED)
 ===================================================== */
 
-// High School Transcript
-const HIGH_SCHOOL_TRANSCRIPT = {
-  V1: "Strong academic performance with consistently high grades.",
-  V2: "Average academic performance with no major disciplinary issues.",
-  V3: "Below average academic performance with multiple low-scoring subjects.",
-  V4: "High school transcript missing or incomplete."
+const HIGH_SCHOOL_TRANSCRIPT_MAP = {
+  V1: "High School Transcript:\nExcellent academic performance with consistent grades.\n",
+  V2: "High School Transcript:\nAverage academic performance with no major disciplinary issues.\n",
+  V3: "High School Transcript:\nLow academic performance with multiple failed subjects.\n",
+  V4: "High School Transcript:\nIncomplete transcript with missing semesters.\n"
 };
 
-// College Transcript
-const COLLEGE_TRANSCRIPT = {
-  V1: "GPA: 3.6 / 4.0\nBacklogs: 0\nGap Years: 0",
-  V2: "GPA: 3.0 / 4.0\nBacklogs: 1\nGap Years: 0",
-  V3: "GPA: 2.2 / 4.0\nBacklogs: 5\nGap Years: 2",
-  V4: "GPA: 1.9 / 4.0\nBacklogs: 7\nGap Years: 3"
+const COLLEGE_TRANSCRIPT_MAP = {
+  V1: "College Transcript:\nGPA: 3.8 / 4.0\nNo backlogs.\n",
+  V2: "College Transcript:\nGPA: 2.2 / 4.0\nBacklogs: 5\nGap Years: 2\n",
+  V3: "College Transcript:\nGPA: 2.8 / 4.0\nBacklogs: 2\n",
+  V4: "College Transcript:\nTranscript submitted but under verification.\n"
 };
 
-// Degree Certificate
-const DEGREE_CERTIFICATE = {
-  V1: "Degree completed and verified.",
-  V2: "Degree certificate present but university or year mismatch detected.",
-  V3: "Provisional degree certificate submitted; final certificate pending.",
-  V4: "Degree certificate missing."
+const DEGREE_CERTIFICATE_MAP = {
+  V1: "Degree Certificate:\nDegree completed with honors.\n",
+  V2: "Degree Certificate:\nDegree completed.\n",
+  V3: "Degree Certificate:\nDegree completed and verified.\n",
+  V4: "Degree Certificate:\nDegree certificate pending verification.\n"
 };
 
-// FAFSA Acknowledgement
-const FAFSA_ACK = {
-  Positive: "Financial aid application approved.",
-  Negative: "No financial aid approval on record."
-};
-
-// English Proficiency
-const ENGLISH_PROFICIENCY = {
-  Positive: "Required English proficiency test cleared.",
-  Negative: "Required English proficiency test not cleared."
+const YES_NO_MAP = {
+  Positive: "Status: Requirement met.\n",
+  Negative: "Status: Requirement not met.\n"
 };
 
 /* =====================================================
@@ -53,39 +43,31 @@ const ENGLISH_PROFICIENCY = {
 ===================================================== */
 
 function buildMockOCRText(lead) {
-  const sections = [];
+  let ocrText = "";
 
-  if (lead.mx_High_School_Transcript_Variant) {
-    sections.push(
-      `High School Transcript:\n${HIGH_SCHOOL_TRANSCRIPT[lead.mx_High_School_Transcript_Variant]}`
-    );
-  }
+  ocrText += HIGH_SCHOOL_TRANSCRIPT_MAP[
+    lead.mx_High_School_Transcript_Variant
+  ] || "";
 
-  if (lead.mx_College_Transcript_Variant) {
-    sections.push(
-      `College Transcript:\n${COLLEGE_TRANSCRIPT[lead.mx_College_Transcript_Variant]}`
-    );
-  }
+  ocrText += COLLEGE_TRANSCRIPT_MAP[
+    lead.mx_College_Transcript_Variant
+  ] || "";
 
-  if (lead.mx_Degree_Certificate_Variant) {
-    sections.push(
-      `Degree Certificate:\n${DEGREE_CERTIFICATE[lead.mx_Degree_Certificate_Variant]}`
-    );
-  }
+  ocrText += DEGREE_CERTIFICATE_MAP[
+    lead.mx_Degree_Certificate_Variant
+  ] || "";
 
   if (lead.mx_FAFSA_Ack_Variant) {
-    sections.push(
-      `FAFSA Acknowledgement:\n${FAFSA_ACK[lead.mx_FAFSA_Ack_Variant]}`
-    );
+    ocrText += "FAFSA Acknowledgement:\n";
+    ocrText += YES_NO_MAP[lead.mx_FAFSA_Ack_Variant] || "";
   }
 
   if (lead.mx_English_Proficiency_Variant) {
-    sections.push(
-      `English Proficiency:\n${ENGLISH_PROFICIENCY[lead.mx_English_Proficiency_Variant]}`
-    );
+    ocrText += "English Proficiency:\n";
+    ocrText += YES_NO_MAP[lead.mx_English_Proficiency_Variant] || "";
   }
 
-  return sections.join("\n\n");
+  return ocrText.trim();
 }
 
 /* =====================================================
