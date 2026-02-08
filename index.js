@@ -134,18 +134,13 @@ Schema:
 app.post("/intake-qa-agent", async (req, res) => {
   const payload = req.body;
 
-  if (!payload?.Activity) {
-    return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
-  }
+const payload = req.body;
 
-  const context = buildApplicantContext(payload);
-  const qa = await runIntakeQA(context);
-
-  return res.json({
-    status: "INTAKE_QA_COMPLETED",
-    ...qa
-  });
-});
+// ✅ Correct guard for UDS Activity webhook
+if (payload.ActivityEventName !== "Application Intake") {
+  console.log("Ignoring non Application Intake event");
+  return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
+}
 
 /* =====================================================
    SERVER
