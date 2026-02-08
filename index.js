@@ -369,37 +369,46 @@ Schema:
    WEBHOOK
 ===================================================== */
 
-  // Check if this is a LeadSquared webhook
- app.post("/intake-qa-agent", async (req, res) => {
+app.post("/intake-qa-agent", async (req, res) => {
   console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
-  console.log(JSON.stringify(req.body, null, 2));
+  console.log("Raw payload keys:", Object.keys(req.body));
+  
+  const lsPayload = req.body;
 
-  const lsPayload = req.body || {};
-
-  const isApplicationIntake =
-    lsPayload.ActivityEventName === "Application Intake" ||
-    lsPayload.ActivityEvent === "212";
-
-  // ACK follow-up automation pings
-  if (!isApplicationIntake) {
-    console.log("Follow-up automation ping acknowledged");
-    return res.status(200).json({ status: "ACKNOWLEDGED" });
+  // Check if this is a LeadSquared webhook
+  if (!lsPayload.Current) {
+    console.log("⚠️ Not a LeadSquared webhook - missing Current object");
+    return res.json({ 
+      status: "IGNORED_NON_INTAKE_EVENT",
+      reason: "Missing LeadSquared Current object"
+    });
   }
 
   try {
+    console.log("✓ LeadSquared webhook detected");
+    
+    // Transform LeadSquared payload to expected format
     const transformedPayload = transformLeadSquaredPayload(lsPayload);
+    console.log("Transformed payload:", JSON.stringify(transformedPayload, null, 2));
+    
     const context = buildApplicantContext(transformedPayload);
+    console.log("Context built successfully");
+    
     const qaResult = await runIntakeQA(context);
+    console.log("QA Result:", JSON.stringify(qaResult, null, 2));
 
-    return res.status(200).json({
+    return res.json({
       status: "INTAKE_QA_COMPLETED",
       ...qaResult
     });
   } catch (err) {
     console.error("❌ INTAKE QA ERROR", err);
-    return res.status(200).json({
+    console.error("Error stack:", err.stack);
+    
+    return res.status(500).json({
       status: "INTAKE_QA_FAILED",
-      error: err.message
+      error: err.message,
+      errorType: err.name
     });
   }
 });
