@@ -59,7 +59,7 @@ function transformLeadSquaredPayload(lsPayload) {
       ActivityDateTime: current.ActivityDateTime || lsPayload.CreatedOn || "",
       
       // Program Information
-      mx_Program_Name: current.mx_Program_Name || "",
+      mx_Program_Name: current.mx_Program_Name || current.mx_Program_Interest || "",
       mx_Program_Level: current.mx_Program_Level || "",
       mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || "",
       mx_Custom_26: current.mx_Custom_26 || "", // Mode of Study
@@ -366,28 +366,37 @@ Schema:
 }
 
 /* =====================================================
-   WEBHOOK
+   WEBHOOK WITH ENHANCED LOGGING
 ===================================================== */
 
 app.post("/intake-qa-agent", async (req, res) => {
   console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
-  console.log("Raw payload keys:", Object.keys(req.body));
+  console.log("Full raw payload:", JSON.stringify(req.body, null, 2));
   
-  const lsPayload = req.body;
+  // 🔍 ENHANCED LOGGING TO DEBUG FIELD MAPPING
+  if (req.body.Current) {
+    console.log("\n========== CURRENT OBJECT DEBUG ==========");
+    console.log("Current object keys:", Object.keys(req.body.Current));
+    console.log("Current object full data:", JSON.stringify(req.body.Current, null, 2));
+    console.log("==========================================\n");
+  }
 
-  // Check if this is a LeadSquared webhook
-  if (!lsPayload.Current) {
-    console.log("⚠️ Not a LeadSquared webhook - missing Current object");
-    return res.json({ 
-      status: "IGNORED_NON_INTAKE_EVENT",
-      reason: "Missing LeadSquared Current object"
-    });
+  const lsPayload = req.body || {};
+
+  // Filter for Application Intake events only
+  const isApplicationIntake =
+    lsPayload.ActivityEventName === "Application Intake" ||
+    lsPayload.ActivityEvent === "212";
+
+  // Acknowledge but don't process other events
+  if (!isApplicationIntake) {
+    console.log("Non-intake event acknowledged");
+    return res.status(200).json({ status: "ACKNOWLEDGED" });
   }
 
   try {
-    console.log("✓ LeadSquared webhook detected");
+    console.log("✓ Processing Application Intake event");
     
-    // Transform LeadSquared payload to expected format
     const transformedPayload = transformLeadSquaredPayload(lsPayload);
     console.log("Transformed payload:", JSON.stringify(transformedPayload, null, 2));
     
@@ -397,7 +406,7 @@ app.post("/intake-qa-agent", async (req, res) => {
     const qaResult = await runIntakeQA(context);
     console.log("QA Result:", JSON.stringify(qaResult, null, 2));
 
-    return res.json({
+    return res.status(200).json({
       status: "INTAKE_QA_COMPLETED",
       ...qaResult
     });
@@ -405,10 +414,9 @@ app.post("/intake-qa-agent", async (req, res) => {
     console.error("❌ INTAKE QA ERROR", err);
     console.error("Error stack:", err.stack);
     
-    return res.status(500).json({
+    return res.status(200).json({
       status: "INTAKE_QA_FAILED",
-      error: err.message,
-      errorType: err.name
+      error: err.message
     });
   }
 });
