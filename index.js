@@ -114,7 +114,19 @@ Return STRICT JSON ONLY in the following schema:
     ]
   });
 
-  return JSON.parse(response.choices[0].message.content);
+  const parsed = JSON.parse(response.choices[0].message.content);
+
+parsed.QA_Summary = truncate(parsed.QA_Summary, 200);
+parsed.QA_Advisory_Notes = truncate(parsed.QA_Advisory_Notes, 200);
+
+return parsed;
+}
+
+function truncate(text, maxLength = 200) {
+  if (!text || typeof text !== "string") return text;
+  return text.length > maxLength
+    ? text.slice(0, maxLength - 3).trim() + "..."
+    : text;
 }
 
 /* =====================================================
