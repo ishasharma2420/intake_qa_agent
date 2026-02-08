@@ -1,6 +1,6 @@
 import express from "express";
 import OpenAI from "openai";
-import fetch from "node-fetch";
+import axios from "axios";
 
 const app = express();
 app.use(express.json());
@@ -51,17 +51,13 @@ async function fetchActivityData(activityId) {
   try {
     const url = `https://${LS_API_HOST}/v2/ProspectActivity.svc/Retrieve?accessKey=${LS_ACCESS_KEY}&secretKey=${LS_SECRET_KEY}`;
     
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        Parameter: {
-          ActivityId: activityId
-        }
-      })
+    const response = await axios.post(url, {
+      Parameter: {
+        ActivityId: activityId
+      }
     });
 
-    const result = await response.json();
+    const result = response.data;
     
     if (result.Status === "Success" && result.ProspectActivity) {
       return result.ProspectActivity;
@@ -70,7 +66,7 @@ async function fetchActivityData(activityId) {
     console.error("Failed to fetch activity data:", result);
     return null;
   } catch (err) {
-    console.error("Error fetching activity data:", err);
+    console.error("Error fetching activity data:", err.message);
     return null;
   }
 }
@@ -415,11 +411,3 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () =>
   console.log(`✓ Intake QA Agent running on port ${PORT}`)
 );
-```
-
-## ENVIRONMENT VARIABLES YOU NEED TO ADD TO RENDER:
-```
-OPENAI_API_KEY=your_openai_key
-LS_API_HOST=api-in21.leadsquared.com
-LS_ACCESS_KEY=your_leadsquared_access_key
-LS_SECRET_KEY=your_leadsquared_secret_key
