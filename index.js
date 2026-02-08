@@ -137,16 +137,11 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   const payload = req.body;
 
-  // ✅ Correct guard for LeadSquared UDS Activity webhook
-  const activityEventName =
-  payload.ActivityEventName ||
-  payload.Data?.ActivityEventName ||
-  payload.Current?.ActivityEventName;
-
-if (activityEventName !== "Application Intake") {
-  console.log("Ignoring non Application Intake event:", activityEventName);
-  return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
-}
+  // 🔥 SINGLE, CORRECT GUARD FOR LEADSQUARED UDS
+  if (!payload.ProspectActivityId) {
+    console.log("Ignoring non-UDS or follow-up automation ping");
+    return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
+  }
 
   try {
     const context = buildApplicantContext(payload);
@@ -164,6 +159,7 @@ if (activityEventName !== "Application Intake") {
     });
   }
 });
+
 
 /* =====================================================
    SERVER
