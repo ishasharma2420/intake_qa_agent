@@ -43,6 +43,7 @@ const VARIANTS = {
 
 function transformLeadSquaredPayload(lsPayload) {
   const current = lsPayload.Current || {};
+  const data = lsPayload.Data || {};  // 👈 ADD THIS!
   
   return {
     Lead: {
@@ -56,64 +57,64 @@ function transformLeadSquaredPayload(lsPayload) {
     },
     Activity: {
       Id: lsPayload.ProspectActivityId,
-      ActivityDateTime: current.ActivityDateTime || lsPayload.CreatedOn || "",
+      ActivityDateTime: data.ActivityDateTime || current.ActivityDateTime || lsPayload.CreatedOn || "",
       
-      // Program Information
-      mx_Program_Name: current.mx_Program_Name || current.mx_Program_Interest || "",
+      // Program Information - FROM CURRENT
+      mx_Program_Name: current.mx_Program_Interest || current.mx_Program_Name || "",
       mx_Program_Level: current.mx_Program_Level || "",
       mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || "",
-      mx_Custom_26: current.mx_Custom_26 || "", // Mode of Study
-      mx_Custom_27: current.mx_Custom_27 || "", // Campus Preference
+      mx_Custom_26: data.mx_Custom_26 || "", // Mode of Study - FROM DATA
+      mx_Custom_27: data.mx_Custom_27 || "", // Campus Preference - FROM DATA
       mx_Campus: current.mx_Campus || "",
       
-      // Citizenship & Residency
-      mx_Custom_1: current.mx_Custom_1 || "", // Citizenship Status
-      mx_Custom_4: current.mx_Custom_4 || "", // Years at Current Address
-      mx_Custom_5: current.mx_Custom_5 || "", // Residency for Tuition
+      // Citizenship & Residency - FROM DATA
+      mx_Custom_1: data.mx_Custom_1 || "", // Citizenship Status
+      mx_Custom_4: data.mx_Custom_4 || "", // Years at Current Address
+      mx_Custom_5: data.mx_Custom_5 || "", // Residency for Tuition
       
-      // Government ID
-      mx_Custom_2: current.mx_Custom_2 || "", // Govt ID Type
-      mx_Custom_3: current.mx_Custom_3 || "", // Govt ID Last 4
+      // Government ID - FROM DATA
+      mx_Custom_2: data.mx_Custom_2 || "", // Govt ID Type
+      mx_Custom_3: data.mx_Custom_3 || "", // Govt ID Last 4
       
-      // High School
-      mx_Custom_6: current.mx_Custom_6 || "", // High School Name
-      mx_Custom_7: current.mx_Custom_7 || "", // School State
-      mx_Custom_8: current.mx_Custom_8 || "", // Graduation Year
-      mx_Custom_9: current.mx_Custom_9 || "", // GPA Scale
-      mx_Custom_10: current.mx_Custom_10 || "", // Final GPA
+      // High School - FROM DATA
+      mx_Custom_6: data.mx_Custom_6 || "", // High School Name
+      mx_Custom_7: data.mx_Custom_7 || "", // School State
+      mx_Custom_8: data.mx_Custom_8 || "", // Graduation Year
+      mx_Custom_9: data.mx_Custom_9 || "", // GPA Scale
+      mx_Custom_10: data.mx_Custom_10 || "", // Final GPA
       
-      // College
-      mx_Custom_42: current.mx_Custom_42 || "", // Add college info?
-      mx_Custom_37: current.mx_Custom_37 || "", // College Name
-      mx_Custom_38: current.mx_Custom_38 || "", // College State
-      mx_Custom_39: current.mx_Custom_39 || "", // Graduation Year
-      mx_Custom_40: current.mx_Custom_40 || "", // GPA Scale
-      mx_Custom_41: current.mx_Custom_41 || "", // Final GPA
+      // College - FROM DATA
+      mx_Custom_42: data.mx_Custom_42 || "", // Add college info?
+      mx_Custom_37: data.mx_Custom_37 || "", // College Name
+      mx_Custom_38: data.mx_Custom_38 || "", // College State
+      mx_Custom_39: data.mx_Custom_39 || "", // Graduation Year
+      mx_Custom_40: data.mx_Custom_40 || "", // GPA Scale
+      mx_Custom_41: data.mx_Custom_41 || "", // Final GPA
       
-      // Degree
-      mx_Custom_43: current.mx_Custom_43 || "", // Add degree info?
-      mx_Custom_11: current.mx_Custom_11 || "", // Degree Name
-      mx_Custom_12: current.mx_Custom_12 || "", // Institution
-      mx_Custom_13: current.mx_Custom_13 || "", // Country of Institution
-      mx_Custom_14: current.mx_Custom_14 || "", // Start Year
-      mx_Custom_15: current.mx_Custom_15 || "", // End Year
-      mx_Custom_17: current.mx_Custom_17 || "", // GPA Scale
-      mx_Custom_16: current.mx_Custom_16 || "", // Final GPA
-      mx_Custom_18: current.mx_Custom_18 || "", // Academic Issues
+      // Degree - FROM DATA
+      mx_Custom_43: data.mx_Custom_43 || "", // Add degree info?
+      mx_Custom_11: data.mx_Custom_11 || "", // Degree Name
+      mx_Custom_12: data.mx_Custom_12 || "", // Institution
+      mx_Custom_13: data.mx_Custom_13 || "", // Country of Institution
+      mx_Custom_14: data.mx_Custom_14 || "", // Start Year
+      mx_Custom_15: data.mx_Custom_15 || "", // End Year
+      mx_Custom_17: data.mx_Custom_17 || "", // GPA Scale
+      mx_Custom_16: data.mx_Custom_16 || "", // Final GPA
+      mx_Custom_18: data.mx_Custom_18 || "", // Academic Issues
       
-      // Financial Aid
-      mx_Custom_19: current.mx_Custom_19 || "", // FA Required
-      mx_Custom_20: current.mx_Custom_20 || "", // FAFSA Status
-      mx_Custom_21: current.mx_Custom_21 || "", // Scholarship Applied
-      mx_Custom_22: current.mx_Custom_22 || "", // Funding Source
-      mx_Custom_23: current.mx_Custom_23 || "", // Household Income Range
+      // Financial Aid - FROM DATA
+      mx_Custom_19: data.mx_Custom_19 || "", // FA Required
+      mx_Custom_20: data.mx_Custom_20 || "", // FAFSA Status
+      mx_Custom_21: data.mx_Custom_21 || "", // Scholarship Applied
+      mx_Custom_22: data.mx_Custom_22 || "", // Funding Source
+      mx_Custom_23: data.mx_Custom_23 || "", // Household Income Range
       
-      // English Proficiency
-      mx_Custom_34: current.mx_Custom_34 || "", // English Proficiency Requirement
-      mx_Custom_35: current.mx_Custom_35 || "", // English Test Type
+      // English Proficiency - FROM DATA
+      mx_Custom_34: data.mx_Custom_34 || "", // English Proficiency Requirement
+      mx_Custom_35: data.mx_Custom_35 || "", // English Test Type
       
-      // Declaration
-      mx_Custom_24: current.mx_Custom_24 || "" // Declaration
+      // Declaration - FROM DATA
+      mx_Custom_24: data.mx_Custom_24 || "" // Declaration
     },
     Variants: {
       HighSchool: current.mx_High_School_Transcript_Variant,
