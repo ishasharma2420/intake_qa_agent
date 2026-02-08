@@ -138,10 +138,15 @@ app.post("/intake-qa-agent", async (req, res) => {
   const payload = req.body;
 
   // ✅ Correct guard for LeadSquared UDS Activity webhook
-  if (payload.ActivityEventName !== "Application Intake") {
-    console.log("Ignoring non Application Intake event");
-    return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
-  }
+  const activityEventName =
+  payload.ActivityEventName ||
+  payload.Data?.ActivityEventName ||
+  payload.Current?.ActivityEventName;
+
+if (activityEventName !== "Application Intake") {
+  console.log("Ignoring non Application Intake event:", activityEventName);
+  return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
+}
 
   try {
     const context = buildApplicantContext(payload);
