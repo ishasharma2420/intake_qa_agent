@@ -132,15 +132,33 @@ Schema:
 ===================================================== */
 
 app.post("/intake-qa-agent", async (req, res) => {
+  console.log("---- INTAKE QA WEBHOOK RECEIVED ----");
+  console.log(JSON.stringify(req.body, null, 2));
+
   const payload = req.body;
 
-const payload = req.body;
+  // ✅ Correct guard for LeadSquared UDS Activity webhook
+  if (payload.ActivityEventName !== "Application Intake") {
+    console.log("Ignoring non Application Intake event");
+    return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
+  }
 
-// ✅ Correct guard for UDS Activity webhook
-if (payload.ActivityEventName !== "Application Intake") {
-  console.log("Ignoring non Application Intake event");
-  return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
-}
+  try {
+    const context = buildApplicantContext(payload);
+    const qaResult = await runIntakeQA(context);
+
+    return res.json({
+      status: "INTAKE_QA_COMPLETED",
+      ...qaResult
+    });
+  } catch (err) {
+    console.error("INTAKE QA ERROR", err);
+    return res.status(500).json({
+      status: "INTAKE_QA_FAILED",
+      error: err.message
+    });
+  }
+});
 
 /* =====================================================
    SERVER
