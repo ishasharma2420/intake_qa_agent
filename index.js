@@ -38,6 +38,48 @@ const VARIANTS = {
 };
 
 /* =====================================================
+   TRANSFORM LEADSQUARED PAYLOAD
+===================================================== */
+
+function transformLeadSquaredPayload(lsPayload) {
+  const current = lsPayload.Current || {};
+  
+  return {
+    Lead: {
+      Id: current.ProspectID || current.lead_ID,
+      FirstName: current.FirstName || "",
+      LastName: current.LastName || "",
+      mx_Student_Email_ID: current.EmailAddress || ""
+    },
+    Activity: {
+      Id: lsPayload.ProspectActivityId,
+      mx_Program_Name: current.mx_Program_Interest || current.mx_Program_Name || "",
+      mx_Program_Level: current.mx_Program_Level || "",
+      mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || "",
+      mx_Custom_26: current.mx_Custom_26 || "",
+      mx_Custom_27: current.mx_Custom_27 || "",
+      mx_Custom_1: current.mx_Custom_1 || "",
+      mx_Custom_10: current.mx_Custom_10 || "",
+      mx_Custom_9: current.mx_Custom_9 || "",
+      mx_Custom_41: current.mx_Custom_41 || "",
+      mx_Custom_40: current.mx_Custom_40 || "",
+      mx_Custom_16: current.mx_Custom_16 || "",
+      mx_Custom_17: current.mx_Custom_17 || "",
+      mx_Custom_18: current.mx_Custom_18 || "",
+      mx_Custom_19: current.mx_Custom_19 || "",
+      mx_Custom_20: current.mx_Custom_20 || ""
+    },
+    Variants: {
+      HighSchool: current.mx_High_School_Transcript_Variant,
+      College: current.mx_College_Transcript_Variant,
+      Degree: current.mx_Degree_Certificate_Variant,
+      English: current.mx_English_Proficiency_Variant,
+      FAFSA: current.mx_FAFSA_Ack_Variant
+    }
+  };
+}
+
+/* =====================================================
    BUILD CONTEXT FOR LLM
 ===================================================== */
 
@@ -120,7 +162,6 @@ Schema:
   // Enforce character limits with proper sentence ending
   ["QA_Summary", "QA_Advisory_Notes"].forEach(key => {
     if (result[key]?.length > 200) {
-      // Find last complete sentence within 197 chars
       let text = result[key].slice(0, 197);
       const lastPeriod = text.lastIndexOf('.');
       const lastExclaim = text.lastIndexOf('!');
@@ -144,29 +185,27 @@ Schema:
 
 app.post("/intake-qa-agent", async (req, res) => {
   console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
-  console.log("Full payload:", JSON.stringify(req.body, null, 2));
-  console.log("Payload keys:", Object.keys(req.body));
+  console.log("Raw payload keys:", Object.keys(req.body));
   
-  const payload = req.body;
+  const lsPayload = req.body;
 
-  // More flexible guard - check if this looks like LeadSquared data
-  const hasLeadData = payload.Lead || payload.Activity || payload.Variants;
-  
-  if (!hasLeadData) {
-    console.log("⚠️ Payload missing Lead/Activity/Variants structure");
-    console.log("This appears to be a non-intake event or malformed request");
+  // Check if this is a LeadSquared webhook
+  if (!lsPayload.Current) {
+    console.log("⚠️ Not a LeadSquared webhook - missing Current object");
     return res.json({ 
       status: "IGNORED_NON_INTAKE_EVENT",
-      reason: "Missing required payload structure"
+      reason: "Missing LeadSquared Current object"
     });
   }
 
   try {
-    console.log("✓ Valid intake payload detected");
-    console.log("Lead ID:", payload.Lead?.Id || "N/A");
-    console.log("Activity ID:", payload.Activity?.Id || "N/A");
+    console.log("✓ LeadSquared webhook detected");
     
-    const context = buildApplicantContext(payload);
+    // Transform LeadSquared payload to expected format
+    const transformedPayload = transformLeadSquaredPayload(lsPayload);
+    console.log("Transformed payload:", JSON.stringify(transformedPayload, null, 2));
+    
+    const context = buildApplicantContext(transformedPayload);
     console.log("Context built successfully");
     
     const qaResult = await runIntakeQA(context);
