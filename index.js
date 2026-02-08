@@ -89,11 +89,11 @@ Rules:
 - Respect program level requirements.
 - Backlogs increase risk but do not automatically fail.
 
-Output STRICT JSON.
-Each of QA_Summary and QA_Advisory_Notes MUST:
-- Be complete sentences
-- Be under 200 characters
-- End naturally (no truncation mid-sentence)
+CRITICAL: Output STRICT JSON with character limits enforced.
+- QA_Summary: Max 190 characters (leave buffer for safety)
+- QA_Advisory_Notes: Max 190 characters (leave buffer for safety)
+- Both fields MUST be complete sentences with proper ending punctuation
+- If approaching limit, use concise wording but maintain clarity
 
 Schema:
 {
@@ -107,7 +107,7 @@ Schema:
 `;
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: "gpt-4o-mini",
     temperature: 0,
     messages: [
       { role: "system", content: systemPrompt },
@@ -117,10 +117,21 @@ Schema:
 
   const result = JSON.parse(response.choices[0].message.content);
 
-  // Safety clamp (last resort)
+  // Enforce character limits with proper sentence ending
   ["QA_Summary", "QA_Advisory_Notes"].forEach(key => {
     if (result[key]?.length > 200) {
-      result[key] = result[key].slice(0, 197) + "...";
+      // Find last complete sentence within 197 chars
+      let text = result[key].slice(0, 197);
+      const lastPeriod = text.lastIndexOf('.');
+      const lastExclaim = text.lastIndexOf('!');
+      const lastQuestion = text.lastIndexOf('?');
+      const lastSentenceEnd = Math.max(lastPeriod, lastExclaim, lastQuestion);
+      
+      if (lastSentenceEnd > 0) {
+        result[key] = text.slice(0, lastSentenceEnd + 1);
+      } else {
+        result[key] = text.trim() + "...";
+      }
     }
   });
 
@@ -132,34 +143,55 @@ Schema:
 ===================================================== */
 
 app.post("/intake-qa-agent", async (req, res) => {
-  console.log("---- INTAKE QA WEBHOOK RECEIVED ----");
-  console.log(JSON.stringify(req.body, null, 2));
-
+  console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
+  console.log("Full payload:", JSON.stringify(req.body, null, 2));
+  console.log("Payload keys:", Object.keys(req.body));
+  
   const payload = req.body;
 
-  // 🔥 SINGLE, CORRECT GUARD FOR LEADSQUARED UDS
-  if (!payload.ProspectActivityId) {
-    console.log("Ignoring non-UDS or follow-up automation ping");
-    return res.json({ status: "IGNORED_NON_INTAKE_EVENT" });
+  // More flexible guard - check if this looks like LeadSquared data
+  const hasLeadData = payload.Lead || payload.Activity || payload.Variants;
+  
+  if (!hasLeadData) {
+    console.log("⚠️ Payload missing Lead/Activity/Variants structure");
+    console.log("This appears to be a non-intake event or malformed request");
+    return res.json({ 
+      status: "IGNORED_NON_INTAKE_EVENT",
+      reason: "Missing required payload structure"
+    });
   }
 
   try {
+    console.log("✓ Valid intake payload detected");
+    console.log("Lead ID:", payload.Lead?.Id || "N/A");
+    console.log("Activity ID:", payload.Activity?.Id || "N/A");
+    
     const context = buildApplicantContext(payload);
+    console.log("Context built successfully");
+    
     const qaResult = await runIntakeQA(context);
+    console.log("QA Result:", JSON.stringify(qaResult, null, 2));
 
     return res.json({
       status: "INTAKE_QA_COMPLETED",
       ...qaResult
     });
   } catch (err) {
-    console.error("INTAKE QA ERROR", err);
+    console.error("❌ INTAKE QA ERROR", err);
+    console.error("Error stack:", err.stack);
+    
     return res.status(500).json({
       status: "INTAKE_QA_FAILED",
-      error: err.message
+      error: err.message,
+      errorType: err.name
     });
   }
 });
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", timestamp: new Date().toISOString() });
+});
 
 /* =====================================================
    SERVER
@@ -167,5 +199,5 @@ app.post("/intake-qa-agent", async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () =>
-  console.log(`Intake QA Agent running on port ${PORT}`)
+  console.log(`✓ Intake QA Agent running on port ${PORT}`)
 );
