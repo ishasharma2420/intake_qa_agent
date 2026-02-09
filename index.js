@@ -9,25 +9,7 @@ const openai = new OpenAI({
 });
 
 /* =====================================================
-   CONSTANTS
-===================================================== */
-
-const ENGLISH_SPEAKING_COUNTRIES = new Set([
-  "UNITED STATES",
-  "USA",
-  "UNITED KINGDOM",
-  "UK",
-  "ENGLAND",
-  "SCOTLAND",
-  "WALES",
-  "IRELAND",
-  "CANADA",
-  "AUSTRALIA",
-  "NEW ZEALAND"
-]);
-
-/* =====================================================
-   MOCK DOCUMENT VARIANTS
+   MOCK DOCUMENT VARIANTS (LOCKED)
 ===================================================== */
 
 const VARIANTS = {
@@ -56,103 +38,133 @@ const VARIANTS = {
 };
 
 /* =====================================================
-   HELPERS
-===================================================== */
-
-function normalize(value) {
-  return (value || "").toString().trim().toUpperCase();
-}
-
-function isEnglishRequired(citizenship, country) {
-  const ctz = normalize(citizenship);
-  const ctr = normalize(country);
-
-  if (ctz === "US CITIZEN" || ctz === "PERMANENT RESIDENT") {
-    return false;
-  }
-
-  if (ENGLISH_SPEAKING_COUNTRIES.has(ctr)) {
-    return false;
-  }
-
-  return true;
-}
-
-/* =====================================================
    TRANSFORM LEADSQUARED PAYLOAD
 ===================================================== */
 
 function transformLeadSquaredPayload(lsPayload) {
   const current = lsPayload.Current || {};
 
-  const englishRequired = isEnglishRequired(
-    current.mx_Custom_1,
-    current.mx_Country
-  );
-
   return {
     Lead: {
+      Id: current.ProspectID || current.lead_ID,
       FirstName: current.FirstName || "",
       LastName: current.LastName || "",
-      Email: current.mx_Student_Email_ID || current.EmailAddress || "",
+      mx_Student_Email_ID:
+        current.mx_Student_Email_ID || current.EmailAddress || "",
       Phone: current.Phone || "",
-      Country: current.mx_Country || ""
+      mx_Date_of_Birth: current.mx_Date_of_Birth || "",
+      mx_Country: current.mx_Country || ""
     },
     Activity: {
-      ProgramLevel: current.mx_Program_Level || "",
-      CitizenshipStatus: current.mx_Custom_1 || "",
-      EnglishRequired: englishRequired
+      ActivityDateTime: lsPayload.CreatedOn || "",
+
+      mx_Program_Name: current.mx_Program_Name || "",
+      mx_Program_Level: current.mx_Program_Level || "",
+      mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || "",
+      mx_Custom_26: current.mx_Custom_26 || "",
+      mx_Custom_27: current.mx_Custom_27 || "",
+      mx_Campus: current.mx_Campus || "",
+
+      mx_Custom_1: current.mx_Custom_1 || "",
+      mx_Custom_4: current.mx_Custom_4 || "",
+      mx_Custom_5: current.mx_Custom_5 || "",
+
+      mx_Custom_6: current.mx_Custom_6 || "",
+      mx_Custom_7: current.mx_Custom_7 || "",
+      mx_Custom_8: current.mx_Custom_8 || "",
+      mx_Custom_9: current.mx_Custom_9 || "",
+      mx_Custom_10: current.mx_Custom_10 || "",
+
+      mx_Custom_42: current.mx_Custom_42 || "",
+      mx_Custom_37: current.mx_Custom_37 || "",
+      mx_Custom_38: current.mx_Custom_38 || "",
+      mx_Custom_39: current.mx_Custom_39 || "",
+      mx_Custom_40: current.mx_Custom_40 || "",
+      mx_Custom_41: current.mx_Custom_41 || "",
+
+      mx_Custom_43: current.mx_Custom_43 || "",
+      mx_Custom_11: current.mx_Custom_11 || "",
+      mx_Custom_12: current.mx_Custom_12 || "",
+      mx_Custom_13: current.mx_Custom_13 || "",
+      mx_Custom_14: current.mx_Custom_14 || "",
+      mx_Custom_15: current.mx_Custom_15 || "",
+      mx_Custom_17: current.mx_Custom_17 || "",
+      mx_Custom_16: current.mx_Custom_16 || "",
+      mx_Custom_18: current.mx_Custom_18 || "",
+
+      mx_Custom_19: current.mx_Custom_19 || "",
+      mx_Custom_20: current.mx_Custom_20 || "",
+      mx_Custom_21: current.mx_Custom_21 || "",
+      mx_Custom_22: current.mx_Custom_22 || "",
+      mx_Custom_23: current.mx_Custom_23 || "",
+
+      mx_Custom_34: current.mx_Custom_34 || "",
+      mx_Custom_35: current.mx_Custom_35 || "",
+      mx_Custom_24: current.mx_Custom_24 || ""
     },
     Variants: {
       HighSchool: current.mx_High_School_Transcript_Variant,
       College: current.mx_College_Transcript_Variant,
       Degree: current.mx_Degree_Certificate_Variant,
-      English: current.mx_English_Proficiency_Variant
+      English: current.mx_English_Proficiency_Variant,
+      FAFSA: current.mx_FAFSA_Ack_Variant
     }
   };
 }
 
 /* =====================================================
-   BUILD CONTEXT (CRITICAL FIX HERE)
+   BUILD CONTEXT FOR LLM
 ===================================================== */
 
 function buildApplicantContext(payload) {
   const { Lead, Activity, Variants } = payload;
 
-  let context = `
+  return `
 APPLICANT PROFILE
 Name: ${Lead.FirstName} ${Lead.LastName}
-Email: ${Lead.Email}
-Phone: ${Lead.Phone}
-Country of Residence: ${Lead.Country}
+Email: ${Lead.mx_Student_Email_ID}
+Country: ${Lead.mx_Country}
 
-PROGRAM
-Program Level: ${Activity.ProgramLevel}
+Program Level: ${Activity.mx_Program_Level}
+Citizenship Status: ${Activity.mx_Custom_1}
 
-CITIZENSHIP
-Citizenship Status: ${Activity.CitizenshipStatus}
-
-DOCUMENT STATUS
-High School Transcript: ${VARIANTS.HIGH_SCHOOL_TRANSCRIPT[Variants.HighSchool] || "Not submitted"}
-College Transcript: ${VARIANTS.COLLEGE_TRANSCRIPT[Variants.College] || "Not submitted"}
-Degree Certificate: ${VARIANTS.DEGREE_CERTIFICATE[Variants.Degree] || "Not submitted"}
-`;
-
-  // ✅ ONLY include English section if required
-  if (Activity.EnglishRequired) {
-    context += `
-ENGLISH PROFICIENCY
-English Proficiency Required: YES
-English Proficiency Document: ${VARIANTS.YES_NO[Variants.English] || "Not submitted"}
-`;
-  } else {
-    context += `
-ENGLISH PROFICIENCY
-English Proficiency Required: NO
-`;
+High School GPA: ${Activity.mx_Custom_10}
+High School Transcript: ${
+    VARIANTS.HIGH_SCHOOL_TRANSCRIPT[Variants.HighSchool] || "Not submitted"
   }
 
-  return context;
+College GPA: ${Activity.mx_Custom_41}
+College Transcript: ${
+    VARIANTS.COLLEGE_TRANSCRIPT[Variants.College] || "Not submitted"
+  }
+
+Degree Certificate: ${
+    VARIANTS.DEGREE_CERTIFICATE[Variants.Degree] || "Not submitted"
+  }
+
+English Proficiency Status: ${
+    VARIANTS.YES_NO[Variants.English] || "Not applicable"
+  }
+`;
+}
+
+/* =====================================================
+   NORMALIZE LLM RESPONSE (CRITICAL FIX)
+===================================================== */
+
+function normalizeQAResult(result) {
+  return {
+    QA_Status: result.QA_Status || "REVIEW",
+    QA_Risk_Level: result.QA_Risk_Level || "LOW",
+    QA_Summary: result.QA_Summary || "",
+    QA_Advisory_Notes: result.QA_Advisory_Notes || "",
+    QA_Key_Findings: Array.isArray(result.QA_Key_Findings)
+      ? result.QA_Key_Findings
+      : [],
+    QA_Concerns: Array.isArray(result.QA_Concerns)
+      ? result.QA_Concerns
+      : []
+  };
 }
 
 /* =====================================================
@@ -160,27 +172,21 @@ English Proficiency Required: NO
 ===================================================== */
 
 async function runIntakeQA(context) {
-  const systemPrompt = `
-You are a University Admissions Intake QA Agent.
-
-RULE:
-- If English Proficiency Required = NO
-  → Do NOT mention English tests or documents anywhere.
-
-Return STRICT JSON only.
-QA_Summary and QA_Advisory_Notes must be under 190 characters.
-`;
-
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
     messages: [
-      { role: "system", content: systemPrompt },
+      {
+        role: "system",
+        content:
+          "Return STRICT JSON using the schema. Always respect citizenship-based English exemptions."
+      },
       { role: "user", content: context }
     ]
   });
 
-  return JSON.parse(response.choices[0].message.content);
+  const parsed = JSON.parse(response.choices[0].message.content);
+  return normalizeQAResult(parsed);
 }
 
 /* =====================================================
@@ -188,12 +194,18 @@ QA_Summary and QA_Advisory_Notes must be under 190 characters.
 ===================================================== */
 
 app.post("/intake-qa-agent", async (req, res) => {
-  if (!req.body?.Current) {
+  const payload = req.body || {};
+
+  const isApplicationIntake =
+    payload.ActivityEventName === "Application Intake" ||
+    payload.ActivityEvent === "212";
+
+  if (!isApplicationIntake || !payload.Current) {
     return res.status(200).json({ status: "ACKNOWLEDGED" });
   }
 
   try {
-    const transformed = transformLeadSquaredPayload(req.body);
+    const transformed = transformLeadSquaredPayload(payload);
     const context = buildApplicantContext(transformed);
     const qaResult = await runIntakeQA(context);
 
@@ -214,6 +226,6 @@ app.post("/intake-qa-agent", async (req, res) => {
 ===================================================== */
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`✓ Intake QA Agent running on port ${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`✓ Intake QA Agent running on port ${PORT}`)
+);
