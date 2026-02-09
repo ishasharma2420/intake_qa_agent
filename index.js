@@ -1,6 +1,5 @@
 import express from "express";
 import OpenAI from "openai";
-import axios from "axios";
 
 const app = express();
 app.use(express.json());
@@ -8,11 +7,6 @@ app.use(express.json());
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-
-// LeadSquared API credentials
-const LS_API_HOST = process.env.LS_API_HOST || "api-in21.leadsquared.com";
-const LS_ACCESS_KEY = process.env.LS_ACCESS_KEY;
-const LS_SECRET_KEY = process.env.LS_SECRET_KEY;
 
 /* =====================================================
    MOCK DOCUMENT VARIANTS (LOCKED)
@@ -44,117 +38,83 @@ const VARIANTS = {
 };
 
 /* =====================================================
-   FETCH ACTIVITY DATA FROM LEADSQUARED
-===================================================== */
-
-async function fetchActivityData(activityId) {
-  try {
-    const url = `https://${LS_API_HOST}/v2/ProspectActivity.svc/Retrieve?accessKey=${LS_ACCESS_KEY}&secretKey=${LS_SECRET_KEY}`;
-    
-    const response = await axios.post(url, {
-      Parameter: {
-        ActivityId: activityId
-      }
-    });
-
-    const result = response.data;
-    
-    if (result.Status === "Success" && result.ProspectActivity) {
-      return result.ProspectActivity;
-    }
-    
-    console.error("Failed to fetch activity data:", result);
-    return null;
-  } catch (err) {
-    console.error("Error fetching activity data:", err.message);
-    return null;
-  }
-}
-
-/* =====================================================
    TRANSFORM LEADSQUARED PAYLOAD
 ===================================================== */
 
-function transformLeadSquaredPayload(lsPayload, activityData) {
+function transformLeadSquaredPayload(lsPayload) {
   const current = lsPayload.Current || {};
-  
-  // Helper function to get activity field value
-  const getActivityField = (fieldName) => {
-    if (!activityData || !activityData.Fields) return "";
-    const field = activityData.Fields.find(f => f.SchemaName === fieldName);
-    return field ? field.Value : "";
-  };
-  
+  const data = lsPayload.Data || {};
+
   return {
     Lead: {
       Id: current.ProspectID || current.lead_ID,
-      FirstName: current.FirstName || "",
-      LastName: current.LastName || "",
-      mx_Student_Email_ID: current.mx_Student_Email_ID || current.EmailAddress || "",
-      Phone: current.Phone || "",
-      mx_Date_of_Birth: current.mx_Date_of_Birth || "",
-      mx_Country: current.mx_Country || ""
+      FirstName: current.FirstName || data.FirstName || "",
+      LastName: current.LastName || data.LastName || "",
+      mx_Student_Email_ID: current.mx_Student_Email_ID || current.EmailAddress || data.EmailAddress || "",
+      Phone: current.Phone || data.Phone || "",
+      mx_Date_of_Birth: current.mx_Date_of_Birth || data.mx_Date_of_Birth || "",
+      mx_Country: current.mx_Country || data.mx_Country || ""
     },
     Activity: {
       Id: lsPayload.ProspectActivityId,
-      ActivityDateTime: lsPayload.CreatedOn || "",
-      
-      // Program Information
-      mx_Program_Name: current.mx_Program_Interest || current.mx_Program_Name || "",
-      mx_Program_Level: current.mx_Program_Level || getActivityField("mx_Program_Level"),
-      mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || getActivityField("mx_Intended_Intake_Term"),
-      mx_Custom_26: getActivityField("mx_Custom_26"), // Mode of Study
-      mx_Custom_27: getActivityField("mx_Custom_27"), // Campus Preference
-      mx_Campus: getActivityField("mx_Campus"),
-      
-      // Citizenship & Residency
-      mx_Custom_1: getActivityField("mx_Custom_1"), // Citizenship Status
-      mx_Custom_4: getActivityField("mx_Custom_4"), // Years at Current Address
-      mx_Custom_5: getActivityField("mx_Custom_5"), // Residency for Tuition
-      
+      ActivityDateTime: current.ActivityDateTime || lsPayload.CreatedOn || "",
+
+      // Program Information - try Current first, then Data
+      mx_Program_Name: current.mx_Program_Interest || current.mx_Program_Name || data.mx_Program_Name || "",
+      mx_Program_Level: current.mx_Program_Level || data.mx_Program_Level || "",
+      mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || data.mx_Intended_Intake_Term || "",
+      mx_Custom_26: data.mx_Custom_26 || current.mx_Custom_26 || "", // Mode of Study
+      mx_Custom_27: data.mx_Custom_27 || current.mx_Custom_27 || "", // Campus Preference
+      mx_Campus: data.mx_Campus || current.mx_Campus || "",
+
+      // Citizenship & Residency - primarily from Data
+      mx_Custom_1: data.mx_Custom_1 || current.mx_Custom_1 || "", // Citizenship Status
+      mx_Custom_4: data.mx_Custom_4 || current.mx_Custom_4 || "", // Years at Current Address
+      mx_Custom_5: data.mx_Custom_5 || current.mx_Custom_5 || "", // Residency for Tuition
+
       // Government ID
-      mx_Custom_2: getActivityField("mx_Custom_2"), // Govt ID Type
-      mx_Custom_3: getActivityField("mx_Custom_3"), // Govt ID Last 4
-      
+      mx_Custom_2: data.mx_Custom_2 || current.mx_Custom_2 || "", // Govt ID Type
+      mx_Custom_3: data.mx_Custom_3 || current.mx_Custom_3 || "", // Govt ID Last 4
+
       // High School
-      mx_Custom_6: getActivityField("mx_Custom_6"), // High School Name
-      mx_Custom_7: getActivityField("mx_Custom_7"), // School State
-      mx_Custom_8: getActivityField("mx_Custom_8"), // Graduation Year
-      mx_Custom_9: getActivityField("mx_Custom_9"), // GPA Scale
-      mx_Custom_10: getActivityField("mx_Custom_10"), // Final GPA
-      
+      mx_Custom_6: data.mx_Custom_6 || current.mx_Custom_6 || "", // High School Name
+      mx_Custom_7: data.mx_Custom_7 || current.mx_Custom_7 || "", // School State
+      mx_Custom_8: data.mx_Custom_8 || current.mx_Custom_8 || "", // Graduation Year
+      mx_Custom_9: data.mx_Custom_9 || current.mx_Custom_9 || "", // GPA Scale
+      mx_Custom_10: data.mx_Custom_10 || current.mx_Custom_10 || "", // Final GPA
+
       // College
-      mx_Custom_42: getActivityField("mx_Custom_42"), // Add college info?
-      mx_Custom_37: getActivityField("mx_Custom_37"), // College Name
-      mx_Custom_38: getActivityField("mx_Custom_38"), // College State
-      mx_Custom_39: getActivityField("mx_Custom_39"), // Graduation Year
-      mx_Custom_40: getActivityField("mx_Custom_40"), // GPA Scale
-      mx_Custom_41: getActivityField("mx_Custom_41"), // Final GPA
-      
+      mx_Custom_42: data.mx_Custom_42 || current.mx_Custom_42 || "", // Add college info?
+      mx_Custom_37: data.mx_Custom_37 || current.mx_Custom_37 || "", // College Name
+      mx_Custom_38: data.mx_Custom_38 || current.mx_Custom_38 || "", // College State
+      mx_Custom_39: data.mx_Custom_39 || current.mx_Custom_39 || "", // Graduation Year
+      mx_Custom_40: data.mx_Custom_40 || current.mx_Custom_40 || "", // GPA Scale
+      mx_Custom_41: data.mx_Custom_41 || current.mx_Custom_41 || "", // Final GPA
+
       // Degree
-      mx_Custom_43: getActivityField("mx_Custom_43"), // Add degree info?
-      mx_Custom_11: getActivityField("mx_Custom_11"), // Degree Name
-      mx_Custom_12: getActivityField("mx_Custom_12"), // Institution
-      mx_Custom_13: getActivityField("mx_Custom_13"), // Country of Institution
-      mx_Custom_14: getActivityField("mx_Custom_14"), // Start Year
-      mx_Custom_15: getActivityField("mx_Custom_15"), // End Year
-      mx_Custom_17: getActivityField("mx_Custom_17"), // GPA Scale
-      mx_Custom_16: getActivityField("mx_Custom_16"), // Final GPA
-      mx_Custom_18: getActivityField("mx_Custom_18"), // Academic Issues
-      
+      mx_Custom_43: data.mx_Custom_43 || current.mx_Custom_43 || "", // Add degree info?
+      mx_Custom_11: data.mx_Custom_11 || current.mx_Custom_11 || "", // Degree Name
+      mx_Custom_12: data.mx_Custom_12 || current.mx_Custom_12 || "", // Institution
+      mx_Custom_13: data.mx_Custom_13 || current.mx_Custom_13 || "", // Country of Institution
+      mx_Custom_14: data.mx_Custom_14 || current.mx_Custom_14 || "", // Start Year
+      mx_Custom_15: data.mx_Custom_15 || current.mx_Custom_15 || "", // End Year
+      mx_Custom_17: data.mx_Custom_17 || current.mx_Custom_17 || "", // GPA Scale
+      mx_Custom_16: data.mx_Custom_16 || current.mx_Custom_16 || "", // Final GPA
+      mx_Custom_18: data.mx_Custom_18 || current.mx_Custom_18 || "", // Academic Issues
+
       // Financial Aid
-      mx_Custom_19: getActivityField("mx_Custom_19"), // FA Required
-      mx_Custom_20: getActivityField("mx_Custom_20"), // FAFSA Status
-      mx_Custom_21: getActivityField("mx_Custom_21"), // Scholarship Applied
-      mx_Custom_22: getActivityField("mx_Custom_22"), // Funding Source
-      mx_Custom_23: getActivityField("mx_Custom_23"), // Household Income Range
-      
+      mx_Custom_19: data.mx_Custom_19 || current.mx_Custom_19 || "", // FA Required
+      mx_Custom_20: data.mx_Custom_20 || current.mx_Custom_20 || "", // FAFSA Status
+      mx_Custom_21: data.mx_Custom_21 || current.mx_Custom_21 || "", // Scholarship Applied
+      mx_Custom_22: data.mx_Custom_22 || current.mx_Custom_22 || "", // Funding Source
+      mx_Custom_23: data.mx_Custom_23 || current.mx_Custom_23 || "", // Household Income Range
+
       // English Proficiency
-      mx_Custom_34: getActivityField("mx_Custom_34"), // English Proficiency Requirement
-      mx_Custom_35: getActivityField("mx_Custom_35"), // English Test Type
-      
+      mx_Custom_34: data.mx_Custom_34 || current.mx_Custom_34 || "", // English Proficiency Requirement
+      mx_Custom_35: data.mx_Custom_35 || current.mx_Custom_35 || "", // English Test Type
+
       // Declaration
-      mx_Custom_24: getActivityField("mx_Custom_24") // Declaration
+      mx_Custom_24: data.mx_Custom_24 || current.mx_Custom_24 || "" // Declaration
     },
     Variants: {
       HighSchool: current.mx_High_School_Transcript_Variant,
@@ -243,46 +203,120 @@ Submission Timestamp: ${Activity.ActivityDateTime || "Not recorded"}
 }
 
 /* =====================================================
-   LLM CALL
+   LLM CALL WITH SMART CONDITIONAL RULES
 ===================================================== */
 
 async function runIntakeQA(context) {
   const systemPrompt = `
 You are a University Admissions Intake QA Agent.
 
+CRITICAL CONDITIONAL RULES - APPLY THESE FIRST:
+
+1. ENGLISH PROFICIENCY EXEMPTIONS:
+   - If Citizenship Status = "US Citizen" → English proficiency NOT required, DO NOT flag missing English tests
+   - If Citizenship Status = "Permanent Resident" → English proficiency NOT required, DO NOT flag missing English tests
+   - If Citizenship Status = "International" → English proficiency IS required
+   - If Country = "United States" or "USA" → English proficiency NOT required
+   - Only flag missing English proficiency if student is explicitly International
+
+2. PROGRAM LEVEL MANDATORY REQUIREMENTS:
+
+   UNDERGRADUATE (UG):
+   - High School transcript: MANDATORY
+   - High School GPA + Scale: MANDATORY
+   - College/Degree information: OPTIONAL (may be fresh graduate or transfer student)
+   - If High School data missing → QA_Status = REVIEW (not FAIL)
+
+   GRADUATE/MASTERS:
+   - High School transcript: MANDATORY
+   - College transcript: MANDATORY
+   - College GPA + Scale: MANDATORY
+   - Degree information: RECOMMENDED but not mandatory (may be in final year)
+   - If High School or College data missing → QA_Status = REVIEW
+
+   DOCTORAL (PhD):
+   - College transcript: MANDATORY
+   - Degree certificate: MANDATORY
+   - Degree GPA + Scale: MANDATORY
+   - High School: OPTIONAL (too old to matter for PhD)
+   - If College or Degree data missing → QA_Status = REVIEW
+
+3. CITIZENSHIP & RESIDENCY LOGIC:
+   - If Citizenship Status = "International" → verify Campus Preference is available for international students
+   - If Residency for Tuition = "In State" but Citizenship = "International" → FLAG as inconsistency
+   - If Years at Current Address < 1 and Residency = "In State" → FLAG as potential issue
+
+4. GPA EVALUATION:
+   - GPA is ALWAYS numeric as provided
+   - Scale is explicit: "4.0", "5.0", or "%"
+   - Normalize internally for reasoning ONLY
+   - Examples:
+     * 2.2 on 4.0 scale = Low (below 2.5)
+     * 3.0 on 4.0 scale = Moderate
+     * 75% on 100 scale = Moderate
+     * 4.5 on 5.0 scale = High
+   - Compare GPA relative to scale, not absolute numbers
+
+5. ACADEMIC ISSUES & BACKLOGS:
+   - "Backlog" = prior academic difficulty, now resolved unless contradicted
+   - Effect: Raises risk level, does NOT auto-fail
+   - If Academic Issues = "Backlog" + College Transcript = "Multiple backlogs" → Risk = HIGH
+   - If Academic Issues = "Probation" → Risk = HIGH, flag for review
+   - If Academic Issues = "None" but transcript says "multiple backlogs" → FLAG inconsistency
+
+6. DOCUMENT VARIANT INTERPRETATION:
+   High School Transcript:
+   - V1 "Strong academic performance" → Positive indicator
+   - V2 "Average performance" → Acceptable
+   - V3 "Low performance with failed subjects" → Risk = HIGH
+   - V4 "Incomplete transcript" → Cannot verify, REVIEW required
+
+   College Transcript:
+   - V1 "High GPA, no backlogs" → Positive indicator
+   - V2 "Low GPA with backlogs" → Risk = HIGH
+   - V3 "Moderate GPA, limited backlogs" → Risk = MEDIUM
+   - V4 "Under verification" → Cannot confirm, REVIEW required
+
+   Degree Certificate:
+   - V1 "Completed with honors" → Positive indicator
+   - V2/V3 "Completed" → Acceptable
+   - V4 "Pending verification" → Cannot confirm, REVIEW required
+
+7. FINANCIAL AID LOGIC:
+   - If Financial Aid Required = "Yes" but FAFSA Status = "Not Started" → Flag as concern
+   - If FAFSA Status = "Approved" but FAFSA Acknowledgement = "Not submitted" → FLAG inconsistency
+
+8. MISSING DATA HANDLING:
+   - If required sections missing for Program Level → QA_Status = REVIEW (NOT FAIL)
+   - Missing optional data → Note in QA_Concerns only if critical
+   - "Not provided", "Not specified", blank → Treat as MISSING
+
 STRICT INFERENCE RULES:
 
-ALLOWED TO INFER:
-- Compare GPA vs GPA scale (e.g., 2.5 on 4.0 scale is low, 75% on 100 scale is different)
-- Detect inconsistencies (e.g., low GPA + "No academic issues" is suspicious)
-- Weigh backlogs conservatively (backlogs increase risk but don't automatically fail)
-- Respect Program Level requirements (UG vs Graduate/Masters vs PhD have different standards)
-- Flag missing critical fields for the program level
+ALLOWED:
+- Compare GPA vs scale and normalize for evaluation
+- Detect inconsistencies between declared values and document variants
+- Apply conditional logic based on citizenship, program level, residency
+- Weigh backlogs conservatively (increase risk, don't auto-fail)
 
-NOT ALLOWED TO INFER:
-- DO NOT guess or assume missing field values
-- DO NOT assume document upload was successful if status says "pending" or "not submitted"
-- DO NOT invent test scores or grades
-- DO NOT make assumptions about fields marked "Not provided" or "Not specified"
+NOT ALLOWED:
+- DO NOT guess missing field values
+- DO NOT assume document uploads succeeded if status is "pending/incomplete"
+- DO NOT invent test scores, GPAs, or grades
+- DO NOT flag English proficiency for US Citizens or Permanent Residents
 
-PROGRAM LEVEL EXPECTATIONS:
-- Undergraduate (UG): High school transcript required, college optional, degree not typically needed
-- Graduate/Masters: Degree certificate required, strong GPA expected, backlogs are red flags
-- Doctoral (PhD): Degree certificate required, research/academic excellence expected, minimal tolerance for academic issues
-
-DOCUMENT VARIANT INTERPRETATION:
-- "Strong/High performance" = positive indicator
-- "Average/Moderate performance" = acceptable but note if combined with other concerns
-- "Low performance/multiple backlogs" = significant risk, flag prominently
-- "Pending verification/Incomplete" = cannot confirm adequacy, flag as blocking concern
-- "Requirement met" for English/FAFSA = positive
-- "Requirement not met" for English/FAFSA = blocking issue if required
+QA_STATUS DECISION TREE:
+- PASS: All mandatory fields present, no major inconsistencies, acceptable academic standing
+- REVIEW: Missing some mandatory data, minor inconsistencies, backlogs present, or pending verifications
+- FAIL: Major inconsistencies detected, critical contradictions (use sparingly)
 
 OUTPUT REQUIREMENTS:
 - Output STRICT JSON only
-- QA_Summary: Max 180 characters, complete sentence with punctuation
-- QA_Advisory_Notes: Max 180 characters, complete sentence with punctuation
-- Be concise but clear - prioritize most critical findings
+- QA_Summary: Max 180 characters, complete sentence, natural ending
+- QA_Advisory_Notes: Max 180 characters, complete sentence, natural ending
+- QA_Key_Findings: Positive observations (2-4 items max)
+- QA_Concerns: Issues flagged (2-4 items max)
+- Be concise, clear, and actionable
 
 Schema:
 {
@@ -306,7 +340,7 @@ Schema:
 
   const result = JSON.parse(response.choices[0].message.content);
 
-  // Enforce character limits with proper sentence ending
+  // Enforce character limits
   ["QA_Summary", "QA_Advisory_Notes"].forEach(key => {
     if (result[key]?.length > 200) {
       let text = result[key].slice(0, 177);
@@ -314,7 +348,7 @@ Schema:
       const lastExclaim = text.lastIndexOf('!');
       const lastQuestion = text.lastIndexOf('?');
       const lastSentenceEnd = Math.max(lastPeriod, lastExclaim, lastQuestion);
-      
+
       if (lastSentenceEnd > 0) {
         result[key] = text.slice(0, lastSentenceEnd + 1);
       } else {
@@ -332,7 +366,7 @@ Schema:
 
 app.post("/intake-qa-agent", async (req, res) => {
   console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
-  
+
   const lsPayload = req.body;
 
   // Check if this is "Application Intake" activity
@@ -344,41 +378,17 @@ app.post("/intake-qa-agent", async (req, res) => {
     });
   }
 
-  // Check if we have an activity ID
-  if (!lsPayload.ProspectActivityId) {
-    console.log("⚠️ Missing ProspectActivityId");
-    return res.json({ 
-      status: "ACKNOWLEDGED",
-      message: "Missing activity ID"
-    });
-  }
-
   try {
     console.log("✓ Processing Application Intake event");
     console.log("Activity ID:", lsPayload.ProspectActivityId);
     console.log("Lead ID:", lsPayload.RelatedProspectId);
-    
-    // Fetch full activity data from LeadSquared API
-    console.log("Fetching activity data from LeadSquared...");
-    const activityData = await fetchActivityData(lsPayload.ProspectActivityId);
-    
-    if (!activityData) {
-      console.error("❌ Failed to fetch activity data");
-      return res.status(500).json({
-        status: "INTAKE_QA_FAILED",
-        error: "Could not retrieve activity data from LeadSquared"
-      });
-    }
-    
-    console.log("✓ Activity data retrieved successfully");
-    
-    // Transform payload with fetched activity data
-    const transformedPayload = transformLeadSquaredPayload(lsPayload, activityData);
+
+    const transformedPayload = transformLeadSquaredPayload(lsPayload);
     console.log("Transformed payload:", JSON.stringify(transformedPayload, null, 2));
-    
+
     const context = buildApplicantContext(transformedPayload);
     console.log("Context built successfully");
-    
+
     const qaResult = await runIntakeQA(context);
     console.log("QA Result:", JSON.stringify(qaResult, null, 2));
 
@@ -389,7 +399,7 @@ app.post("/intake-qa-agent", async (req, res) => {
   } catch (err) {
     console.error("❌ INTAKE QA ERROR", err);
     console.error("Error stack:", err.stack);
-    
+
     return res.status(500).json({
       status: "INTAKE_QA_FAILED",
       error: err.message,
