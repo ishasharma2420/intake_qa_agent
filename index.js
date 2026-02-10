@@ -40,35 +40,53 @@ const VARIANTS = {
 };
 
 /* =====================================================
-   TRANSFORM LEADSQUARED PAYLOAD
+   TRANSFORM LEADSQUARED PAYLOAD - ROBUST VERSION
 ===================================================== */
 
 function transformLeadSquaredPayload(lsPayload) {
+  // LeadSquared sends data in multiple formats:
+  // 1. Activity webhooks: Data in lsPayload.Data
+  // 2. Automation webhooks: Data in lsPayload.Current
+  // 3. UDS webhooks: Minimal data in lsPayload.Current
+  
   const current = lsPayload.Current || {};
+  const data = lsPayload.Data || {};
   
   // Helper function to get value from multiple possible locations
   const getValue = (...keys) => {
+    // First check Data object (activity data)
     for (const key of keys) {
-      if (current[key] !== undefined && current[key] !== null && current[key] !== '') {
-        return current[key];
+      const val = data[key];
+      if (val !== undefined && val !== null && val !== '') {
+        return String(val).trim();
+      }
+    }
+    // Then check Current object (automation/lead data)
+    for (const key of keys) {
+      const val = current[key];
+      if (val !== undefined && val !== null && val !== '') {
+        return String(val).trim();
       }
     }
     return "";
   };
 
+  console.log("📦 Data object keys:", Object.keys(data).length > 0 ? Object.keys(data).slice(0, 10) : "Empty");
+  console.log("📦 Current object keys:", Object.keys(current).length > 0 ? Object.keys(current).slice(0, 10) : "Empty");
+
   return {
     Lead: {
-      Id: getValue('ProspectID', 'lead_ID'),
-      FirstName: getValue('FirstName', 'First Name'),
-      LastName: getValue('LastName', 'Last Name'),
-      mx_Student_Email_ID: getValue('mx_Student_Email_ID', 'Student Email ID', 'EmailAddress', 'Email'),
-      Phone: getValue('Phone', 'Phone Number'),
-      mx_Date_of_Birth: getValue('mx_Date_of_Birth', 'Date of Birth'),
+      Id: getValue('ProspectID', 'lead_ID', 'mx_ProspectID') || lsPayload.RelatedProspectId || "",
+      FirstName: getValue('FirstName', 'First Name', 'mx_FirstName'),
+      LastName: getValue('LastName', 'Last Name', 'mx_LastName'),
+      mx_Student_Email_ID: getValue('mx_Student_Email_ID', 'Student Email ID', 'EmailAddress', 'Email', 'mx_EmailAddress'),
+      Phone: getValue('Phone', 'Phone Number', 'mx_Phone'),
+      mx_Date_of_Birth: getValue('mx_Date_of_Birth', 'Date of Birth', 'DateOfBirth'),
       mx_Country: getValue('mx_Country', 'Country')
     },
     Activity: {
-      Id: lsPayload.ProspectActivityId,
-      ActivityDateTime: getValue('ActivityDateTime') || lsPayload.CreatedOn || "",
+      Id: lsPayload.ProspectActivityId || "",
+      ActivityDateTime: getValue('ActivityDateTime', 'CreatedOn') || lsPayload.CreatedOn || "",
 
       // Program Information
       mx_Program_Name: getValue('mx_Program_Name', 'mx_Program_Interest', 'Program Interest', 'Program Name'),
@@ -128,14 +146,15 @@ function transformLeadSquaredPayload(lsPayload) {
       mx_Custom_24: getValue('mx_Custom_24', 'Declaration Accepted', 'Declaration')
     },
     Variants: {
-      HighSchool: getValue('mx_High_School_Transcript_Variant', 'High School Transcript'),
-      College: getValue('mx_College_Transcript_Variant', 'College Transcripts'),
-      Degree: getValue('mx_Degree_Certificate_Variant', 'Degree Certificate'),
-      English: getValue('mx_English_Proficiency_Variant', 'English Proficiency'),
-      FAFSA: getValue('mx_FAFSA_Ack_Variant', 'FAFSA Acknowledgement')
+      HighSchool: getValue('mx_High_School_Transcript_Variant', 'High School Transcript') || current.mx_High_School_Transcript_Variant,
+      College: getValue('mx_College_Transcript_Variant', 'College Transcripts') || current.mx_College_Transcript_Variant,
+      Degree: getValue('mx_Degree_Certificate_Variant', 'Degree Certificate') || current.mx_Degree_Certificate_Variant,
+      English: getValue('mx_English_Proficiency_Variant', 'English Proficiency') || current.mx_English_Proficiency_Variant,
+      FAFSA: getValue('mx_FAFSA_Ack_Variant', 'FAFSA Acknowledgement') || current.mx_FAFSA_Ack_Variant
     }
   };
 }
+
 /* =====================================================
    BUILD CONTEXT FOR LLM
 ===================================================== */
@@ -254,24 +273,21 @@ OPTIONAL (DO NOT FLAG IF MISSING):
 - College information (many UG students come straight from high school)
 - Degree information (UG students don't have degrees yet)
 
-IF MISSING MANDATORY → QA_Status = REVIEW
+IF MISSING MANDATORY → QA_Status = REVIEW (not FAIL)
 
 
 **GRADUATE / MASTER / MASTERS / MBA:**
 MANDATORY:
-- High School Name + Graduation Year (still required for context)
 - College Name
 - College Graduation Year
 - College GPA + GPA Scale
 - College Transcript Status (cannot be "Not submitted")
 
 RECOMMENDED BUT NOT MANDATORY:
+- High School information (still valuable context)
 - Degree Certificate (student may be in final year)
 
-OPTIONAL:
-- High school GPA details (less relevant for graduate programs)
-
-IF MISSING MANDATORY → QA_Status = REVIEW
+IF MISSING MANDATORY → QA_Status = REVIEW (not FAIL)
 
 
 **DOCTORAL / PHD / DOCTORATE:**
@@ -288,7 +304,7 @@ MANDATORY:
 OPTIONAL (DO NOT FLAG):
 - High School details (too old to matter for PhD)
 
-IF MISSING MANDATORY → QA_Status = REVIEW
+IF MISSING MANDATORY → QA_Status = REVIEW (not FAIL)
 
 ═══════════════════════════════════════════════════════════════════════════
 RULE #3: CITIZENSHIP & RESIDENCY (CONSISTENCY CHECKS)
@@ -398,7 +414,7 @@ CONSISTENCY CHECKS:
 ✗ Household Income Range = "<$30,000" BUT Financial Aid Required = "No"
   → FLAG: "Low household income but student not seeking financial aid"
 
-✓ Financial Aid Required = "No" → No need to check FAFSA fields
+✓ Financial Aid Required = "No" → No need to check FAFSA fields, DO NOT flag
 
 ✓ Financial Aid Required = "Yes" + FAFSA Status = "Completed" + FAFSA Ack = "Requirement met"
   → Consistent, positive indicator
@@ -420,7 +436,7 @@ IDENTIFY MISSING DATA:
 RULES FOR MISSING DATA:
 
 IF MANDATORY FIELD MISSING (based on Program Level from Rule #2):
-→ QA_Status = REVIEW
+→ QA_Status = REVIEW (NEVER FAIL for missing data alone)
 → List specific missing field in QA_Concerns
 → Risk = MEDIUM (minimum)
 
@@ -438,8 +454,8 @@ RULE #9: DECLARATION & TIMESTAMP
 ═══════════════════════════════════════════════════════════════════════════
 
 Declaration Field:
-✓ If Declaration = "I agree" OR "Completed" OR "Yes" → Application properly submitted
-✗ If Declaration = "Not completed" OR empty → FLAG: "Application declaration not completed"
+✓ If Declaration = "Yes" OR "Accepted" OR "I agree" OR "Completed" → Application properly submitted
+✗ If Declaration = "Not completed" OR "No" OR empty → FLAG: "Application declaration not completed"
 
 Submission Timestamp:
 ✓ If present → Note submission date in QA_Summary (if space permits)
@@ -455,19 +471,24 @@ RULE #10: QA_STATUS DECISION TREE (FINAL DETERMINATION)
 ✓ Acceptable academic standing (GPA relative to scale is reasonable)
 ✓ All required documents submitted and verified
 ✓ NO critical concerns
+✓ At most 1-2 minor issues
 
 **REVIEW:**
 ✓ Some mandatory fields missing
 ✓ Minor inconsistencies detected (e.g., FA fields, residency questions)
-✓ Academic issues present (backlogs, probation) but not severe
+✓ Academic issues present (backlogs) but not severe
 ✓ Documents pending verification
 ✓ Moderate risk concerns that need human review
+✓ Use REVIEW as default when uncertain
 
 **FAIL:**
-✓ Major contradictions (e.g., claims degree but no college transcript)
-✓ Severe academic issues with no mitigating factors
-✓ Critical inconsistencies across multiple areas
-✓ Use FAIL sparingly - prefer REVIEW when uncertain
+✓ Major contradictions (e.g., claims degree but no college transcript AND transcript says "not submitted")
+✓ Severe academic issues with no mitigating factors (e.g., dismissed from multiple institutions)
+✓ Critical inconsistencies across multiple areas (3+ major red flags)
+✓ Use FAIL VERY sparingly - only for egregious issues
+✓ NEVER use FAIL for missing data alone
+
+DEFAULT TO REVIEW WHEN IN DOUBT.
 
 ═══════════════════════════════════════════════════════════════════════════
 RULE #11: RISK LEVEL ASSIGNMENT
@@ -478,17 +499,18 @@ RULE #11: RISK LEVEL ASSIGNMENT
 - Strong academic performance
 - No inconsistencies
 - Complete documentation
+- No concerns
 
 **MEDIUM:**
-- Some missing optional/recommended fields
-- Minor inconsistencies
+- 1-3 missing optional/recommended fields
+- Minor inconsistencies (1-2 issues)
 - Academic issues resolved (backlogs cleared)
 - Some documents pending verification
 - Most requirements met
 
 **HIGH:**
-- Multiple mandatory fields missing
-- Major inconsistencies detected
+- Multiple mandatory fields missing (3+)
+- Major inconsistencies detected (2+)
 - Poor academic performance (low GPA relative to scale)
 - Current academic probation or dismissal
 - Multiple documents missing or unverified
@@ -502,33 +524,35 @@ QA_Summary:
 - Max 190 characters
 - Complete sentence with natural ending (period, exclamation, or question mark)
 - High-level overview of application status
-- Example: "Application shows strong academic background but missing college transcript verification."
+- Example: "Undergraduate applicant with complete high school records and average transcript."
 
 QA_Key_Findings (POSITIVE OBSERVATIONS ONLY):
 - Array of 2-4 items
 - Focus on strengths: good GPA, complete documentation, strong transcripts, etc.
+- ALWAYS include at least 1-2 positive findings if ANY data exists
 - Examples:
-  * "Strong high school GPA of 3.8 on 4.0 scale"
-  * "All required documents submitted and verified"
+  * "High school transcript submitted showing average performance"
   * "US Citizen - no English proficiency requirement"
-  * "Financial aid documentation complete"
+  * "Financial aid documentation in progress"
+  * "Degree certificate verified and complete"
+- If truly no positive findings, use: ["Application received for review"]
 
 QA_Concerns (ISSUES & FLAGS ONLY):
 - Array of 2-4 items
 - List actual problems detected
 - Be specific about what's missing or inconsistent
 - Examples:
-  * "College transcript shows multiple backlogs"
-  * "Missing degree certificate for doctoral program"
-  * "International student claiming in-state residency"
+  * "Missing high school graduation year and GPA for undergraduate program"
+  * "College transcript shows low GPA with multiple backlogs"
   * "FAFSA required but not started"
 - DO NOT include items that don't apply (e.g., English proficiency for US Citizens)
+- DO NOT flag optional fields
 
 QA_Advisory_Notes:
 - Max 190 characters
 - Complete sentence
 - Actionable next steps for admissions team
-- Example: "Verify college transcript backlogs and request current academic standing letter."
+- Example: "Request missing high school details and verify transcript authenticity."
 
 ═══════════════════════════════════════════════════════════════════════════
 FORBIDDEN ACTIONS (NEVER DO THESE)
@@ -543,6 +567,8 @@ FORBIDDEN ACTIONS (NEVER DO THESE)
 ✗ DO NOT add concerns that don't exist in the data
 ✗ DO NOT penalize students for not providing optional information
 ✗ DO NOT make assumptions about missing data
+✗ DO NOT use FAIL status for missing data alone
+✗ DO NOT return empty QA_Key_Findings array - always find at least one positive
 
 ═══════════════════════════════════════════════════════════════════════════
 JSON OUTPUT SCHEMA (STRICT)
@@ -588,40 +614,89 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE. NO EXPLANATION. JUST THE JSON OBJECT.
     }
   });
 
+  // Ensure QA_Key_Findings is never empty
+  if (!result.QA_Key_Findings || result.QA_Key_Findings.length === 0) {
+    result.QA_Key_Findings = ["Application received for review"];
+  }
+
   return result;
 }
 
 /* =====================================================
-   WEBHOOK
+   WEBHOOK ENDPOINT WITH COMPREHENSIVE VALIDATION
 ===================================================== */
 
 app.post("/intake-qa-agent", async (req, res) => {
   console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
+  console.log("Timestamp:", new Date().toISOString());
   console.log("Raw payload keys:", Object.keys(req.body));
 
   const lsPayload = req.body;
 
-  // Check if this is a LeadSquared webhook
-  if (!lsPayload.Current) {
-    console.log("⚠️ Not a LeadSquared webhook - missing Current object");
+  // VALIDATION #1: Check if this is a LeadSquared webhook
+  if (!lsPayload.Current && !lsPayload.Data) {
+    console.log("⚠️ Not a LeadSquared webhook - missing both Current and Data objects");
     return res.json({ 
-      status: "IGNORED_NON_LEADSQUARED_WEBHOOK",
-      reason: "Missing LeadSquared Current object"
+      status: "IGNORED_INVALID_WEBHOOK",
+      reason: "Missing LeadSquared payload structure"
+    });
+  }
+
+  // VALIDATION #2: Check for empty UDS configuration calls
+  const currentKeys = Object.keys(lsPayload.Current || {});
+  const dataKeys = Object.keys(lsPayload.Data || {});
+  
+  if (currentKeys.length === 0 && dataKeys.length === 0) {
+    console.log("⚠️ Empty payload detected - likely UDS configuration test");
+    return res.json({ 
+      status: "ACKNOWLEDGED_EMPTY_PAYLOAD",
+      message: "Empty payload acknowledged, no QA needed"
+    });
+  }
+
+  // VALIDATION #3: Check if we have minimum data for QA assessment
+  const hasVariantsOnly = currentKeys.length <= 10 && dataKeys.length === 0;
+  if (hasVariantsOnly) {
+    console.log("⚠️ Variants-only payload detected - insufficient data for QA");
+    return res.json({
+      status: "INSUFFICIENT_DATA",
+      message: "Payload contains only variant data, no lead/activity fields"
     });
   }
 
   try {
-    console.log("✓ LeadSquared webhook detected");
+    console.log("✓ Valid LeadSquared webhook detected");
 
+    // Transform payload
     const transformedPayload = transformLeadSquaredPayload(lsPayload);
-    console.log("Transformed payload:", JSON.stringify(transformedPayload, null, 2));
+    console.log("✓ Payload transformed successfully");
+    console.log("Lead ID:", transformedPayload.Lead.Id);
+    console.log("Program Level:", transformedPayload.Activity.mx_Program_Level);
 
+    // VALIDATION #4: Check for minimum required data after transformation
+    const hasMinimumData = 
+      transformedPayload.Lead.Id || 
+      transformedPayload.Activity.mx_Program_Level ||
+      transformedPayload.Activity.mx_Program_Name;
+
+    if (!hasMinimumData) {
+      console.log("⚠️ Transformed payload lacks minimum required fields");
+      return res.json({
+        status: "INSUFFICIENT_DATA_POST_TRANSFORM",
+        message: "Unable to extract minimum required fields from payload"
+      });
+    }
+
+    // Build context for LLM
     const context = buildApplicantContext(transformedPayload);
-    console.log("Context built successfully");
+    console.log("✓ Context built successfully");
 
+    // Run QA assessment
     const qaResult = await runIntakeQA(context);
+    console.log("✓ QA assessment completed");
     console.log("QA Result:", JSON.stringify(qaResult, null, 2));
 
+    // Return formatted response
     return res.json({
       status: "INTAKE_QA_COMPLETED",
       QA_Status: qaResult.QA_Status,
@@ -631,27 +706,49 @@ app.post("/intake-qa-agent", async (req, res) => {
       QA_Concerns: JSON.stringify(qaResult.QA_Concerns),
       QA_Advisory_Notes: qaResult.QA_Advisory_Notes
     });
-  } catch (err) {
-    console.error("❌ INTAKE QA ERROR", err);
-    console.error("Error stack:", err.stack);
 
+  } catch (err) {
+    console.error("❌ INTAKE QA ERROR");
+    console.error("Error type:", err.name);
+    console.error("Error message:", err.message);
+    console.error("Stack trace:", err.stack);
+
+    // Return error response with valid QA structure
     return res.status(500).json({
       status: "INTAKE_QA_FAILED",
       error: err.message,
       errorType: err.name,
       QA_Status: "REVIEW",
       QA_Risk_Level: "HIGH",
-      QA_Summary: "System error occurred during QA assessment",
-      QA_Key_Findings: JSON.stringify([]),
-      QA_Concerns: JSON.stringify(["System error during assessment"]),
-      QA_Advisory_Notes: "Manual review required due to system error"
+      QA_Summary: "System error occurred during QA assessment.",
+      QA_Key_Findings: JSON.stringify(["Application received"]),
+      QA_Concerns: JSON.stringify(["System error during assessment - manual review required"]),
+      QA_Advisory_Notes: "Technical issue prevented automated assessment. Conduct manual review."
     });
   }
 });
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
+  res.json({ 
+    status: "OK", 
+    timestamp: new Date().toISOString(),
+    service: "Intake QA Agent",
+    version: "1.0.0"
+  });
+});
+
+// Root endpoint
+app.get("/", (req, res) => {
+  res.json({
+    service: "Intake QA Agent API",
+    status: "running",
+    endpoints: {
+      health: "/health",
+      qaAgent: "/intake-qa-agent (POST)"
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
 /* =====================================================
@@ -659,6 +756,10 @@ app.get("/health", (req, res) => {
 ===================================================== */
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () =>
-  console.log(`✓ Intake QA Agent running on port ${PORT}`)
-);
+app.listen(PORT, () => {
+  console.log("═══════════════════════════════════════════════");
+  console.log("✓ Intake QA Agent running on port", PORT);
+  console.log("✓ Health check available at /health");
+  console.log("✓ QA endpoint available at /intake-qa-agent");
+  console.log("═══════════════════════════════════════════════");
+});
