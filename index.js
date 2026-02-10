@@ -1,98 +1,459 @@
 import express from "express";
 import OpenAI from "openai";
-import axios from "axios";
+import cors from "cors";
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-const LS_BASE = "https://api.leadsquared.com/v2";
-const LS_ACCESS_KEY = process.env.LS_ACCESS_KEY;
-const LS_SECRET_KEY = process.env.LS_SECRET_KEY;
+/* =====================================================
+   MOCK DOCUMENT VARIANTS (LOCKED)
+===================================================== */
 
-/* =========================
-   WRITE BACK TO LEADSQUARED
-========================= */
+const VARIANTS = {
+  HIGH_SCHOOL_TRANSCRIPT: {
+    V1: "Strong academic performance with consistent grades.",
+    V2: "Average performance with no disciplinary issues.",
+    V3: "Low performance with multiple failed subjects.",
+    V4: "Incomplete transcript with missing semesters."
+  },
+  COLLEGE_TRANSCRIPT: {
+    V1: "High GPA with no backlogs.",
+    V2: "Low GPA with multiple backlogs and gap years.",
+    V3: "Moderate GPA with limited backlogs.",
+    V4: "Transcript submitted but under verification."
+  },
+  DEGREE_CERTIFICATE: {
+    V1: "Degree completed with honors.",
+    V2: "Degree completed.",
+    V3: "Degree completed and verified.",
+    V4: "Degree certificate pending verification."
+  },
+  YES_NO: {
+    Positive: "Requirement met.",
+    Negative: "Requirement not met."
+  }
+};
 
-async function updateLeadSquared(prospectId, activityId, qa) {
-  const payload = {
-    ProspectId: prospectId,
-    ActivityId: activityId,
-    Fields: {
-      QA_Status: qa.QA_Status,
-      QA_Risk_Level: qa.QA_Risk_Level,
-      QA_Summary: qa.QA_Summary,
-      QA_Advisory_Notes: qa.QA_Advisory_Notes,
-      QA_Key_Findings: qa.QA_Key_Findings.join(" | "),
-      QA_Concerns: qa.QA_Concerns.join(" | "),
-      QA_Run_Completed: "Yes"
+/* =====================================================
+   TRANSFORM LEADSQUARED PAYLOAD
+===================================================== */
+
+function transformLeadSquaredPayload(lsPayload) {
+  const current = lsPayload.Current || {};
+
+  return {
+    Lead: {
+      Id: current.ProspectID || current.lead_ID,
+      FirstName: current.FirstName || "",
+      LastName: current.LastName || "",
+      mx_Student_Email_ID: current.mx_Student_Email_ID || current.EmailAddress || "",
+      Phone: current.Phone || "",
+      mx_Date_of_Birth: current.mx_Date_of_Birth || "",
+      mx_Country: current.mx_Country || ""
+    },
+    Activity: {
+      Id: lsPayload.ProspectActivityId,
+      ActivityDateTime: current.ActivityDateTime || lsPayload.CreatedOn || "",
+
+      // Program Information
+      mx_Program_Name: current.mx_Program_Name || "",
+      mx_Program_Level: current.mx_Program_Level || "",
+      mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || "",
+      mx_Custom_26: current.mx_Custom_26 || "", // Mode of Study
+      mx_Custom_27: current.mx_Custom_27 || "", // Campus Preference
+      mx_Campus: current.mx_Campus || "",
+
+      // Citizenship & Residency
+      mx_Custom_1: current.mx_Custom_1 || "", // Citizenship Status
+      mx_Custom_4: current.mx_Custom_4 || "", // Years at Current Address
+      mx_Custom_5: current.mx_Custom_5 || "", // Residency for Tuition
+
+      // Government ID
+      mx_Custom_2: current.mx_Custom_2 || "", // Govt ID Type
+      mx_Custom_3: current.mx_Custom_3 || "", // Govt ID Last 4
+
+      // High School
+      mx_Custom_6: current.mx_Custom_6 || "", // High School Name
+      mx_Custom_7: current.mx_Custom_7 || "", // School State
+      mx_Custom_8: current.mx_Custom_8 || "", // Graduation Year
+      mx_Custom_9: current.mx_Custom_9 || "", // GPA Scale
+      mx_Custom_10: current.mx_Custom_10 || "", // Final GPA
+
+      // College
+      mx_Custom_42: current.mx_Custom_42 || "", // Add college info?
+      mx_Custom_37: current.mx_Custom_37 || "", // College Name
+      mx_Custom_38: current.mx_Custom_38 || "", // College State
+      mx_Custom_39: current.mx_Custom_39 || "", // Graduation Year
+      mx_Custom_40: current.mx_Custom_40 || "", // GPA Scale
+      mx_Custom_41: current.mx_Custom_41 || "", // Final GPA
+
+      // Degree
+      mx_Custom_43: current.mx_Custom_43 || "", // Add degree info?
+      mx_Custom_11: current.mx_Custom_11 || "", // Degree Name
+      mx_Custom_12: current.mx_Custom_12 || "", // Institution
+      mx_Custom_13: current.mx_Custom_13 || "", // Country of Institution
+      mx_Custom_14: current.mx_Custom_14 || "", // Start Year
+      mx_Custom_15: current.mx_Custom_15 || "", // End Year
+      mx_Custom_17: current.mx_Custom_17 || "", // GPA Scale
+      mx_Custom_16: current.mx_Custom_16 || "", // Final GPA
+      mx_Custom_18: current.mx_Custom_18 || "", // Academic Issues
+
+      // Financial Aid
+      mx_Custom_19: current.mx_Custom_19 || "", // FA Required
+      mx_Custom_20: current.mx_Custom_20 || "", // FAFSA Status
+      mx_Custom_21: current.mx_Custom_21 || "", // Scholarship Applied
+      mx_Custom_22: current.mx_Custom_22 || "", // Funding Source
+      mx_Custom_23: current.mx_Custom_23 || "", // Household Income Range
+
+      // English Proficiency
+      mx_Custom_34: current.mx_Custom_34 || "", // English Proficiency Requirement
+      mx_Custom_35: current.mx_Custom_35 || "", // English Test Type
+
+      // Declaration
+      mx_Custom_24: current.mx_Custom_24 || "" // Declaration
+    },
+    Variants: {
+      HighSchool: current.mx_High_School_Transcript_Variant,
+      College: current.mx_College_Transcript_Variant,
+      Degree: current.mx_Degree_Certificate_Variant,
+      English: current.mx_English_Proficiency_Variant,
+      FAFSA: current.mx_FAFSA_Ack_Variant
     }
   };
-
-  await axios.post(
-    `${LS_BASE}/ProspectActivity/Update?accessKey=${LS_ACCESS_KEY}&secretKey=${LS_SECRET_KEY}`,
-    payload
-  );
 }
 
-/* =========================
-   LLM QA
-========================= */
+/* =====================================================
+   BUILD CONTEXT FOR LLM
+===================================================== */
+
+function buildApplicantContext(payload) {
+  const { Lead = {}, Activity = {}, Variants = {} } = payload;
+
+  return `
+APPLICANT PROFILE
+Name: ${Lead.FirstName || ""} ${Lead.LastName || ""}
+Email: ${Lead.mx_Student_Email_ID || ""}
+Phone: ${Lead.Phone || ""}
+Date of Birth: ${Lead.mx_Date_of_Birth || "Not provided"}
+Country: ${Lead.mx_Country || "Not provided"}
+
+PROGRAM INFORMATION
+Program: ${Activity.mx_Program_Name || "Not specified"}
+Program Level: ${Activity.mx_Program_Level || "Not specified"}
+Intended Intake Term: ${Activity.mx_Intended_Intake_Term || "Not specified"}
+Mode of Study: ${Activity.mx_Custom_26 || "Not specified"}
+Campus Preference: ${Activity.mx_Custom_27 || "Not specified"}
+Campus: ${Activity.mx_Campus || "Not specified"}
+
+CITIZENSHIP & RESIDENCY
+Citizenship Status: ${Activity.mx_Custom_1 || "Not specified"}
+Years at Current Address: ${Activity.mx_Custom_4 || "Not provided"}
+Residency for Tuition: ${Activity.mx_Custom_5 || "Not specified"}
+
+HIGH SCHOOL ACADEMIC RECORD
+High School Name: ${Activity.mx_Custom_6 || "Not provided"}
+School State: ${Activity.mx_Custom_7 || "Not provided"}
+Graduation Year: ${Activity.mx_Custom_8 || "Not provided"}
+GPA Scale: ${Activity.mx_Custom_9 || "Not provided"}
+Final GPA (Declared): ${Activity.mx_Custom_10 || "Not provided"}
+High School Transcript Status: ${VARIANTS.HIGH_SCHOOL_TRANSCRIPT[Variants.HighSchool] || "Not submitted"}
+
+COLLEGE ACADEMIC RECORD (if applicable)
+Add College Information: ${Activity.mx_Custom_42 || "Not specified"}
+College Name: ${Activity.mx_Custom_37 || "Not provided"}
+College State: ${Activity.mx_Custom_38 || "Not provided"}
+Graduation Year: ${Activity.mx_Custom_39 || "Not provided"}
+GPA Scale: ${Activity.mx_Custom_40 || "Not provided"}
+Final GPA: ${Activity.mx_Custom_41 || "Not provided"}
+College Transcript Status: ${VARIANTS.COLLEGE_TRANSCRIPT[Variants.College] || "Not submitted"}
+
+DEGREE INFORMATION (if applicable)
+Add Degree Information: ${Activity.mx_Custom_43 || "Not specified"}
+Degree Name: ${Activity.mx_Custom_11 || "Not provided"}
+Institution: ${Activity.mx_Custom_12 || "Not provided"}
+Country of Institution: ${Activity.mx_Custom_13 || "Not provided"}
+Start Year: ${Activity.mx_Custom_14 || "Not provided"}
+End Year: ${Activity.mx_Custom_15 || "Not provided"}
+GPA Scale: ${Activity.mx_Custom_17 || "Not provided"}
+Final GPA (Declared): ${Activity.mx_Custom_16 || "Not provided"}
+Academic Issues: ${Activity.mx_Custom_18 || "None"}
+Degree Certificate Status: ${VARIANTS.DEGREE_CERTIFICATE[Variants.Degree] || "Not submitted"}
+
+FINANCIAL AID
+Financial Aid Required: ${Activity.mx_Custom_19 || "Not specified"}
+FAFSA Status: ${Activity.mx_Custom_20 || "Not Started"}
+Scholarship Applied: ${Activity.mx_Custom_21 || "Not specified"}
+Funding Source: ${Activity.mx_Custom_22 || "Not specified"}
+Household Income Range: ${Activity.mx_Custom_23 || "Not provided"}
+FAFSA Acknowledgement: ${VARIANTS.YES_NO[Variants.FAFSA] || "Not submitted"}
+
+ENGLISH PROFICIENCY
+English Proficiency Requirement: ${Activity.mx_Custom_34 || "Not specified"}
+English Test Type: ${Activity.mx_Custom_35 || "Not specified"}
+English Proficiency Status: ${VARIANTS.YES_NO[Variants.English] || "Not applicable"}
+
+DECLARATION
+Declaration: ${Activity.mx_Custom_24 || "Not completed"}
+Submission Timestamp: ${Activity.ActivityDateTime || "Not recorded"}
+`;
+}
+
+/* =====================================================
+   LLM CALL WITH SMART CONDITIONAL RULES
+===================================================== */
 
 async function runIntakeQA(context) {
+  const systemPrompt = `
+You are a University Admissions Intake QA Agent.
+
+⚠️ CRITICAL RULE #1 - ENGLISH PROFICIENCY EXEMPTIONS (READ THIS FIRST):
+
+**AUTOMATIC EXEMPTIONS - DO NOT FLAG ENGLISH PROFICIENCY FOR:**
+- Citizenship Status = "US Citizen" → EXEMPT (English proficiency NOT required)
+- Citizenship Status = "Permanent Resident" → EXEMPT (English proficiency NOT required)
+- Citizenship Status = "Green Card Holder" → EXEMPT (English proficiency NOT required)
+- Country = "United States" OR "USA" → EXEMPT (English proficiency NOT required)
+
+**ONLY FLAG ENGLISH PROFICIENCY IF:**
+- Citizenship Status = "International" AND Country ≠ "United States"
+
+**IF EXEMPT:** Do not mention English proficiency anywhere in QA_Concerns, QA_Advisory_Notes, or QA_Key_Findings.
+
+---
+
+PROGRAM LEVEL MANDATORY REQUIREMENTS:
+
+UNDERGRADUATE (UG):
+- High School transcript: MANDATORY
+- High School GPA + Scale: MANDATORY
+- College/Degree information: OPTIONAL (may be transfer student)
+- If High School data missing → QA_Status = REVIEW
+
+GRADUATE/MASTERS:
+- High School transcript: MANDATORY
+- College transcript: MANDATORY
+- College GPA + Scale: MANDATORY
+- Degree information: RECOMMENDED but not mandatory
+- If High School or College data missing → QA_Status = REVIEW
+
+DOCTORAL (PhD):
+- College transcript: MANDATORY
+- Degree certificate: MANDATORY
+- Degree GPA + Scale: MANDATORY
+- High School: OPTIONAL
+- If College or Degree data missing → QA_Status = REVIEW
+
+---
+
+CITIZENSHIP & RESIDENCY LOGIC:
+- If Citizenship = "International" → verify Campus Preference is available for international students
+- If Residency = "In State" but Citizenship = "International" → FLAG as inconsistency
+- If Years at Current Address < 1 and Residency = "In State" → FLAG as potential issue
+
+---
+
+GPA EVALUATION:
+- GPA is ALWAYS as provided (never modify)
+- Scale is explicit: "4.0", "5.0", or "%"
+- Normalize internally for evaluation only:
+  * 2.2 on 4.0 scale = Low (below 2.5)
+  * 3.0 on 4.0 scale = Moderate
+  * 75% = Moderate
+  * 4.5 on 5.0 scale = High
+- Compare GPA relative to scale
+
+---
+
+ACADEMIC ISSUES & BACKLOGS:
+- "Backlog" = prior difficulty, now resolved unless contradicted
+- Effect: Raises risk level, does NOT auto-fail
+- If Academic Issues = "Backlog" + College Transcript = "Multiple backlogs" → Risk = HIGH
+- If Academic Issues = "Probation" → Risk = HIGH
+- If Academic Issues = "None" but transcript shows backlogs → FLAG inconsistency
+
+---
+
+DOCUMENT VARIANT INTERPRETATION:
+
+High School Transcript:
+- V1 "Strong performance" → Positive
+- V2 "Average performance" → Acceptable
+- V3 "Low performance with failed subjects" → Risk = HIGH
+- V4 "Incomplete transcript" → REVIEW required
+
+College Transcript:
+- V1 "High GPA, no backlogs" → Positive
+- V2 "Low GPA with backlogs" → Risk = HIGH
+- V3 "Moderate GPA, limited backlogs" → Risk = MEDIUM
+- V4 "Under verification" → REVIEW required
+
+Degree Certificate:
+- V1 "Completed with honors" → Positive
+- V2/V3 "Completed" → Acceptable
+- V4 "Pending verification" → REVIEW required
+
+---
+
+FINANCIAL AID LOGIC:
+- If FA Required = "Yes" but FAFSA Status = "Not Started" → Flag as concern
+- If FAFSA Status = "Approved" but FAFSA Ack = "Not submitted" → FLAG inconsistency
+- If Household Income < $30k and FA = "No" → FLAG for review
+
+---
+
+MISSING DATA HANDLING:
+- Required fields missing for Program Level → QA_Status = REVIEW
+- "Not provided", "Not specified", blank → Treat as MISSING
+
+---
+
+STRICT INFERENCE RULES:
+
+✅ ALLOWED:
+- Compare GPA vs scale and normalize for evaluation
+- Detect inconsistencies between declared values and document variants
+- Apply conditional logic based on citizenship, program level, residency
+- Weigh backlogs conservatively
+
+❌ NOT ALLOWED:
+- DO NOT guess missing field values
+- DO NOT assume document uploads succeeded if status is "pending/incomplete"
+- DO NOT invent test scores, GPAs, or grades
+- DO NOT modify declared GPA values
+- DO NOT flag English proficiency for US Citizens, Permanent Residents, or Green Card Holders
+
+---
+
+QA_STATUS DECISION TREE:
+- PASS: All mandatory fields present, no major inconsistencies, acceptable academic standing
+- REVIEW: Missing mandatory data, minor inconsistencies, backlogs, or pending verifications
+- FAIL: Major inconsistencies, critical contradictions (use sparingly)
+
+---
+
+OUTPUT REQUIREMENTS:
+- Output STRICT JSON only
+- QA_Summary: Max 190 characters, complete sentence
+- QA_Advisory_Notes: Max 190 characters, complete sentence
+- QA_Key_Findings: 2-4 positive observations
+- QA_Concerns: 2-4 issues (DO NOT include English proficiency for exempt students)
+- Be concise, clear, actionable
+
+Schema:
+{
+  "QA_Status": "PASS | REVIEW | FAIL",
+  "QA_Risk_Level": "LOW | MEDIUM | HIGH",
+  "QA_Summary": "",
+  "QA_Key_Findings": [],
+  "QA_Concerns": [],
+  "QA_Advisory_Notes": ""
+}
+`;
+
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
     messages: [
-      { role: "system", content: "Return STRICT JSON only." },
+      { role: "system", content: systemPrompt },
       { role: "user", content: context }
     ]
   });
 
-  return JSON.parse(response.choices[0].message.content);
+  const result = JSON.parse(response.choices[0].message.content);
+
+  // Enforce character limits with proper sentence ending
+  ["QA_Summary", "QA_Advisory_Notes"].forEach(key => {
+    if (result[key]?.length > 200) {
+      let text = result[key].slice(0, 197);
+      const lastPeriod = text.lastIndexOf('.');
+      const lastExclaim = text.lastIndexOf('!');
+      const lastQuestion = text.lastIndexOf('?');
+      const lastSentenceEnd = Math.max(lastPeriod, lastExclaim, lastQuestion);
+
+      if (lastSentenceEnd > 0) {
+        result[key] = text.slice(0, lastSentenceEnd + 1);
+      } else {
+        result[key] = text.trim() + "...";
+      }
+    }
+  });
+
+  return result;
 }
 
-/* =========================
+/* =====================================================
    WEBHOOK
-========================= */
+===================================================== */
 
 app.post("/intake-qa-agent", async (req, res) => {
-  const body = req.body || {};
+  console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
+  console.log("Raw payload keys:", Object.keys(req.body));
 
-  console.log("==== WEBHOOK RECEIVED ====");
-  console.log("Keys:", Object.keys(body));
+  const lsPayload = req.body;
 
-  // Ignore follow-up pings
-  if (!body.ActivityEventName || body.ActivityEventName !== "Application Intake") {
-    console.log("↩️ Follow-up / sync ping detected. ACK only.");
-    return res.status(200).json({ status: "ACKNOWLEDGED" });
+  // Check if this is a LeadSquared webhook
+  if (!lsPayload.Current) {
+    console.log("⚠️ Not a LeadSquared webhook - missing Current object");
+    return res.json({ 
+      status: "IGNORED_NON_LEADSQUARED_WEBHOOK",
+      reason: "Missing LeadSquared Current object"
+    });
   }
 
   try {
-    console.log("✅ Application Intake detected");
+    console.log("✓ LeadSquared webhook detected");
 
-    const prospectId = body.Current?.ProspectID;
-    const activityId = body.ProspectActivityId;
+    const transformedPayload = transformLeadSquaredPayload(lsPayload);
+    console.log("Transformed payload:", JSON.stringify(transformedPayload, null, 2));
 
-    const context = JSON.stringify(body, null, 2);
-    const qa = await runIntakeQA(context);
+    const context = buildApplicantContext(transformedPayload);
+    console.log("Context built successfully");
 
-    await updateLeadSquared(prospectId, activityId, qa);
+    const qaResult = await runIntakeQA(context);
+    console.log("QA Result:", JSON.stringify(qaResult, null, 2));
 
-    console.log("✅ QA written back to LeadSquared");
-
-    return res.status(200).json({ status: "ACKNOWLEDGED" });
-
+    return res.json({
+      status: "INTAKE_QA_COMPLETED",
+      QA_Status: qaResult.QA_Status,
+      QA_Risk_Level: qaResult.QA_Risk_Level,
+      QA_Summary: qaResult.QA_Summary,
+      QA_Key_Findings: JSON.stringify(qaResult.QA_Key_Findings),
+      QA_Concerns: JSON.stringify(qaResult.QA_Concerns),
+      QA_Advisory_Notes: qaResult.QA_Advisory_Notes
+    });
   } catch (err) {
-    console.error("❌ QA ERROR", err);
-    return res.status(200).json({ status: "ACKNOWLEDGED" });
+    console.error("❌ INTAKE QA ERROR", err);
+    console.error("Error stack:", err.stack);
+
+    return res.status(500).json({
+      status: "INTAKE_QA_FAILED",
+      error: err.message,
+      errorType: err.name,
+      QA_Status: "REVIEW",
+      QA_Risk_Level: "HIGH",
+      QA_Summary: "System error occurred during QA assessment",
+      QA_Key_Findings: JSON.stringify([]),
+      QA_Concerns: JSON.stringify(["System error during assessment"]),
+      QA_Advisory_Notes: "Manual review required due to system error"
+    });
   }
 });
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", timestamp: new Date().toISOString() });
+});
+
+/* =====================================================
+   SERVER
+===================================================== */
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () =>
-  console.log(`✅ Intake QA Agent running on port ${PORT}`)
+  console.log(`✓ Intake QA Agent running on port ${PORT}`)
 );
