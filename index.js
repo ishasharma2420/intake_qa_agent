@@ -10,7 +10,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// ✅ In-memory cache for QA results (activity ID → result)
+// ✅ In-memory cache for QA results
 const qaResultsCache = new Map();
 
 // Clean up old cache entries (older than 5 minutes)
@@ -21,7 +21,7 @@ setInterval(() => {
       qaResultsCache.delete(key);
     }
   }
-}, 60000); // Run every minute
+}, 60000);
 
 const VARIANTS = {
   HIGH_SCHOOL_TRANSCRIPT: {
@@ -460,7 +460,6 @@ app.post("/intake-qa-agent", async (req, res) => {
                  lsPayload.Current?.ProspectID || 
                  lsPayload.Current?.lead_ID || "";
   
-  // ✅ Use BOTH activity ID and lead ID as cache keys
   const cacheKey = activityId || leadId;
 
   console.log("Activity ID:", activityId);
@@ -477,7 +476,6 @@ app.post("/intake-qa-agent", async (req, res) => {
   const currentKeys = Object.keys(lsPayload.Current || {});
   const dataKeys = Object.keys(lsPayload.Data || {});
   
-  // ✅ CHECK CACHE FIRST
   if (cacheKey && qaResultsCache.has(cacheKey)) {
     console.log("✓ Returning cached QA result for key:", cacheKey);
     const cachedResult = qaResultsCache.get(cacheKey).result;
@@ -551,7 +549,6 @@ app.post("/intake-qa-agent", async (req, res) => {
       QA_Advisory_Notes: qaResult.QA_Advisory_Notes
     };
 
-    // ✅ CACHE WITH BOTH KEYS
     if (cacheKey) {
       qaResultsCache.set(cacheKey, {
         result: response,
@@ -566,86 +563,6 @@ app.post("/intake-qa-agent", async (req, res) => {
         });
         console.log("✓ Also cached with lead ID:", leadId);
       }
-    }
-
-    return res.json(response);
-
-  } catch (err) {
-    console.error("❌ ERROR:", err.message);
-    return res.status(500).json({
-      status: "INTAKE_QA_FAILED",
-      error: err.message,
-      QA_Status: "REVIEW",
-      QA_Risk_Level: "HIGH",
-      QA_Summary: "System error occurred during assessment.",
-      QA_Key_Findings: ["Application received"],
-      QA_Concerns: ["System error - manual review required"],
-      QA_Advisory_Notes: "Technical issue prevented automated assessment."
-    });
-  }
-});
-    
-    // Check if we have a cached result
-    if (activityId && qaResultsCache.has(activityId)) {
-      console.log("✓ Found cached result, returning it");
-      const cachedResult = qaResultsCache.get(activityId).result;
-      return res.json(cachedResult);
-    }
-    
-    console.log("⚠️ No cached result found, returning default");
-    return res.json({
-      status: "INTAKE_QA_COMPLETED",
-      QA_Status: "REVIEW",
-      QA_Risk_Level: "MEDIUM",
-      QA_Summary: "Application received and queued for review.",
-      QA_Key_Findings: ["Application received"],
-      QA_Concerns: ["Pending full assessment"],
-      QA_Advisory_Notes: "Complete assessment pending data availability."
-    });
-  }
-
-  try {
-    console.log("✓ Valid webhook with data detected");
-
-    const transformedPayload = transformLeadSquaredPayload(lsPayload);
-    console.log("✓ Payload transformed");
-
-    const hasMinimumData = 
-      transformedPayload.Lead.Id || 
-      transformedPayload.Activity.mx_Program_Level ||
-      transformedPayload.Activity.mx_Program_Name;
-
-    if (!hasMinimumData) {
-      console.log("⚠️ Insufficient data");
-      return res.json({
-        status: "INSUFFICIENT_DATA_POST_TRANSFORM",
-        message: "Unable to extract minimum required fields"
-      });
-    }
-
-    const context = buildApplicantContext(transformedPayload);
-    const qaResult = await runIntakeQA(context);
-    
-    console.log("✓ QA completed");
-    console.log("QA Result:", JSON.stringify(qaResult, null, 2));
-
-    const response = {
-      status: "INTAKE_QA_COMPLETED",
-      QA_Status: qaResult.QA_Status,
-      QA_Risk_Level: qaResult.QA_Risk_Level,
-      QA_Summary: qaResult.QA_Summary,
-      QA_Key_Findings: qaResult.QA_Key_Findings,
-      QA_Concerns: qaResult.QA_Concerns,
-      QA_Advisory_Notes: qaResult.QA_Advisory_Notes
-    };
-
-    // ✅ CACHE THE RESULT for subsequent calls
-    if (activityId) {
-      qaResultsCache.set(activityId, {
-        result: response,
-        timestamp: Date.now()
-      });
-      console.log("✓ Cached result for activity:", activityId);
     }
 
     return res.json(response);
