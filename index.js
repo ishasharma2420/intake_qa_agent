@@ -10,9 +10,18 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-/* =====================================================
-   MOCK DOCUMENT VARIANTS (LOCKED)
-===================================================== */
+// ✅ In-memory cache for QA results (activity ID → result)
+const qaResultsCache = new Map();
+
+// Clean up old cache entries (older than 5 minutes)
+setInterval(() => {
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  for (const [key, value] of qaResultsCache.entries()) {
+    if (value.timestamp < fiveMinutesAgo) {
+      qaResultsCache.delete(key);
+    }
+  }
+}, 60000); // Run every minute
 
 const VARIANTS = {
   HIGH_SCHOOL_TRANSCRIPT: {
@@ -39,19 +48,10 @@ const VARIANTS = {
   }
 };
 
-/* =====================================================
-   HELPER: INFER TRANSCRIPT VARIANT FROM FILENAME
-===================================================== */
-
 const inferTranscriptVariant = (file) => {
   if (!file || file === "" || file === "Not Uploaded") return "";
-  // If a file exists, assume V2 (average performance, submitted)
   return "V2";
 };
-
-/* =====================================================
-   TRANSFORM LEADSQUARED PAYLOAD - ROBUST VERSION
-===================================================== */
 
 function transformLeadSquaredPayload(lsPayload) {
   const current = lsPayload.Current || {};
@@ -73,9 +73,6 @@ function transformLeadSquaredPayload(lsPayload) {
     return "";
   };
 
-  console.log("📦 Data object keys:", Object.keys(data).length > 0 ? Object.keys(data).slice(0, 10) : "Empty");
-  console.log("📦 Current object keys:", Object.keys(current).length > 0 ? Object.keys(current).slice(0, 10) : "Empty");
-
   return {
     Lead: {
       Id: getValue('ProspectID', 'lead_ID', 'mx_ProspectID') || lsPayload.RelatedProspectId || "",
@@ -89,34 +86,28 @@ function transformLeadSquaredPayload(lsPayload) {
     Activity: {
       Id: lsPayload.ProspectActivityId || "",
       ActivityDateTime: getValue('ActivityDateTime', 'CreatedOn') || lsPayload.CreatedOn || "",
-
       mx_Program_Name: getValue('mx_Program_Name', 'mx_Program_Interest', 'Program Interest', 'Program Name'),
       mx_Program_Level: getValue('mx_Program_Level', 'Program Level'),
       mx_Intended_Intake_Term: getValue('mx_Intended_Intake_Term', 'Intended Intake Term'),
       mx_Custom_26: getValue('mx_Custom_26', 'Mode of Study'),
       mx_Custom_27: getValue('mx_Custom_27', 'Campus Preference'),
       mx_Campus: getValue('mx_Campus', 'Campus'),
-
       mx_Custom_1: getValue('mx_Custom_1', 'Citizenship Status'),
       mx_Custom_4: getValue('mx_Custom_4', 'Years at Current Address'),
       mx_Custom_5: getValue('mx_Custom_5', 'Residency for Tuition'),
-
       mx_Custom_2: getValue('mx_Custom_2', 'Government ID Type', 'Govt ID Type'),
       mx_Custom_3: getValue('mx_Custom_3', 'Govt ID Digits', 'Government ID Digits'),
-
       mx_Custom_6: getValue('mx_Custom_6', 'High School Name'),
       mx_Custom_7: getValue('mx_Custom_7', 'School State'),
       mx_Custom_8: getValue('mx_Custom_8', 'Graduation Year'),
       mx_Custom_9: getValue('mx_Custom_9', 'GPA Scale'),
       mx_Custom_10: getValue('mx_Custom_10', 'Final GPA'),
-
       mx_Custom_42: getValue('mx_Custom_42', 'Add College Details'),
       mx_Custom_37: getValue('mx_Custom_37', 'College Name'),
       mx_Custom_38: getValue('mx_Custom_38', 'College State'),
       mx_Custom_39: getValue('mx_Custom_39', 'College Graduation Year'),
       mx_Custom_40: getValue('mx_Custom_40', 'College GPA Scale'),
       mx_Custom_41: getValue('mx_Custom_41', 'College Final GPA'),
-
       mx_Custom_43: getValue('mx_Custom_43', 'Add Degree Details'),
       mx_Custom_11: getValue('mx_Custom_11', 'Degree Name'),
       mx_Custom_12: getValue('mx_Custom_12', 'Institution'),
@@ -126,21 +117,17 @@ function transformLeadSquaredPayload(lsPayload) {
       mx_Custom_17: getValue('mx_Custom_17', 'GPA Scale for Degree'),
       mx_Custom_16: getValue('mx_Custom_16', 'GPA for Degree'),
       mx_Custom_18: getValue('mx_Custom_18', 'Academic Issues'),
-
       mx_Custom_19: getValue('mx_Custom_19', 'FA Required'),
       mx_Custom_20: getValue('mx_Custom_20', 'FAFSA Status'),
       mx_Custom_21: getValue('mx_Custom_21', 'Scholarship Applied'),
       mx_Custom_22: getValue('mx_Custom_22', 'Funding Source'),
       mx_Custom_23: getValue('mx_Custom_23', 'Household Income Range'),
-
       mx_Custom_34: getValue('mx_Custom_34', 'English Proficiency Requiremen', 'English Proficiency Requirement'),
       mx_Custom_35: getValue('mx_Custom_35', 'English Test Type'),
-
       mx_Custom_24: getValue('mx_Custom_24', 'Declaration Accepted', 'Declaration')
     },
     Variants: {
-      HighSchool: getValue('mx_High_School_Transcript_Variant') || 
-                  inferTranscriptVariant(getValue('High School Transcript')),
+      HighSchool: getValue('mx_High_School_Transcript_Variant') || inferTranscriptVariant(getValue('High School Transcript')),
       College: getValue('mx_College_Transcript_Variant'),
       Degree: getValue('mx_Degree_Certificate_Variant'),
       English: getValue('mx_English_Proficiency_Variant'),
@@ -149,14 +136,9 @@ function transformLeadSquaredPayload(lsPayload) {
   };
 }
 
-/* =====================================================
-   BUILD CONTEXT FOR LLM
-===================================================== */
-
 function buildApplicantContext(payload) {
   const { Lead = {}, Activity = {}, Variants = {} } = payload;
 
-  // ✅ FIX: Check if English proficiency is exempt
   const isEnglishExempt =
     /us citizen|permanent resident|green card/i.test(Activity.mx_Custom_1) ||
     /united states|usa|us/i.test(Lead.mx_Country);
@@ -235,10 +217,6 @@ Declaration: ${Activity.mx_Custom_24 || "Not completed"}
 Submission Timestamp: ${Activity.ActivityDateTime || "Not recorded"}
 `;
 }
-
-/* =====================================================
-   LLM CALL WITH BULLETPROOF CONDITIONAL RULES
-===================================================== */
 
 async function runIntakeQA(context) {
   const systemPrompt = `
@@ -442,7 +420,6 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
 
   const result = JSON.parse(response.choices[0].message.content);
 
-  // ✅ FIX: Safety rail - never FAIL UG automatically
   if (/undergraduate|ug/i.test(context) && result.QA_Status === "FAIL") {
     result.QA_Status = "REVIEW";
     if (result.QA_Risk_Level === "HIGH") {
@@ -450,7 +427,6 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
     }
   }
 
-  // Enforce character limits
   ["QA_Summary", "QA_Advisory_Notes"].forEach(key => {
     if (result[key]?.length > 200) {
       let text = result[key].slice(0, 197);
@@ -467,7 +443,6 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
     }
   });
 
-  // Ensure QA_Key_Findings is never empty
   if (!result.QA_Key_Findings || result.QA_Key_Findings.length === 0) {
     result.QA_Key_Findings = ["Application received for review"];
   }
@@ -475,19 +450,18 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
   return result;
 }
 
-/* =====================================================
-   WEBHOOK ENDPOINT
-===================================================== */
-
 app.post("/intake-qa-agent", async (req, res) => {
   console.log("==== INTAKE QA WEBHOOK RECEIVED ====");
   console.log("Timestamp:", new Date().toISOString());
-  console.log("Raw payload keys:", Object.keys(req.body));
 
   const lsPayload = req.body;
+  const activityId = lsPayload.ProspectActivityId || "";
+  const leadId = lsPayload.RelatedProspectId || "";
+
+  console.log("Activity ID:", activityId);
+  console.log("Lead ID:", leadId);
 
   if (!lsPayload.Current && !lsPayload.Data) {
-    console.log("⚠️ Invalid webhook - missing both Current and Data");
     return res.json({ 
       status: "IGNORED_INVALID_WEBHOOK",
       reason: "Missing LeadSquared payload structure"
@@ -497,8 +471,15 @@ app.post("/intake-qa-agent", async (req, res) => {
   const currentKeys = Object.keys(lsPayload.Current || {});
   const dataKeys = Object.keys(lsPayload.Data || {});
   
+  // ✅ CHECK CACHE FIRST - if this is second call, return cached result
+  if (activityId && qaResultsCache.has(activityId)) {
+    console.log("✓ Returning cached QA result for activity:", activityId);
+    const cachedResult = qaResultsCache.get(activityId).result;
+    return res.json(cachedResult);
+  }
+
   if (currentKeys.length === 0 && dataKeys.length === 0) {
-    console.log("⚠️ Empty payload - UDS configuration test");
+    console.log("⚠️ Empty payload");
     return res.json({ 
       status: "ACKNOWLEDGED_EMPTY_PAYLOAD",
       message: "Empty payload acknowledged"
@@ -507,7 +488,16 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   const hasVariantsOnly = currentKeys.length <= 10 && dataKeys.length === 0;
   if (hasVariantsOnly) {
-    console.log("⚠️ Variants-only payload - returning default");
+    console.log("⚠️ Variants-only payload - checking cache");
+    
+    // Check if we have a cached result
+    if (activityId && qaResultsCache.has(activityId)) {
+      console.log("✓ Found cached result, returning it");
+      const cachedResult = qaResultsCache.get(activityId).result;
+      return res.json(cachedResult);
+    }
+    
+    console.log("⚠️ No cached result found, returning default");
     return res.json({
       status: "INTAKE_QA_COMPLETED",
       QA_Status: "REVIEW",
@@ -520,12 +510,10 @@ app.post("/intake-qa-agent", async (req, res) => {
   }
 
   try {
-    console.log("✓ Valid webhook detected");
+    console.log("✓ Valid webhook with data detected");
 
     const transformedPayload = transformLeadSquaredPayload(lsPayload);
     console.log("✓ Payload transformed");
-    console.log("Lead ID:", transformedPayload.Lead.Id);
-    console.log("Program Level:", transformedPayload.Activity.mx_Program_Level);
 
     const hasMinimumData = 
       transformedPayload.Lead.Id || 
@@ -533,7 +521,7 @@ app.post("/intake-qa-agent", async (req, res) => {
       transformedPayload.Activity.mx_Program_Name;
 
     if (!hasMinimumData) {
-      console.log("⚠️ Insufficient data post-transform");
+      console.log("⚠️ Insufficient data");
       return res.json({
         status: "INSUFFICIENT_DATA_POST_TRANSFORM",
         message: "Unable to extract minimum required fields"
@@ -541,27 +529,34 @@ app.post("/intake-qa-agent", async (req, res) => {
     }
 
     const context = buildApplicantContext(transformedPayload);
-    console.log("✓ Context built");
-
     const qaResult = await runIntakeQA(context);
+    
     console.log("✓ QA completed");
     console.log("QA Result:", JSON.stringify(qaResult, null, 2));
 
-    // ✅ FIX: DO NOT stringify arrays
-    return res.json({
+    const response = {
       status: "INTAKE_QA_COMPLETED",
       QA_Status: qaResult.QA_Status,
       QA_Risk_Level: qaResult.QA_Risk_Level,
       QA_Summary: qaResult.QA_Summary,
-      QA_Key_Findings: qaResult.QA_Key_Findings,      // NOT stringified
-      QA_Concerns: qaResult.QA_Concerns,              // NOT stringified
+      QA_Key_Findings: qaResult.QA_Key_Findings,
+      QA_Concerns: qaResult.QA_Concerns,
       QA_Advisory_Notes: qaResult.QA_Advisory_Notes
-    });
+    };
+
+    // ✅ CACHE THE RESULT for subsequent calls
+    if (activityId) {
+      qaResultsCache.set(activityId, {
+        result: response,
+        timestamp: Date.now()
+      });
+      console.log("✓ Cached result for activity:", activityId);
+    }
+
+    return res.json(response);
 
   } catch (err) {
     console.error("❌ ERROR:", err.message);
-    console.error("Stack:", err.stack);
-
     return res.status(500).json({
       status: "INTAKE_QA_FAILED",
       error: err.message,
@@ -579,8 +574,7 @@ app.get("/health", (req, res) => {
   res.json({ 
     status: "OK", 
     timestamp: new Date().toISOString(),
-    service: "Intake QA Agent",
-    version: "1.0.0"
+    cacheSize: qaResultsCache.size
   });
 });
 
@@ -588,10 +582,7 @@ app.get("/", (req, res) => {
   res.json({
     service: "Intake QA Agent API",
     status: "running",
-    endpoints: {
-      health: "/health",
-      qaAgent: "/intake-qa-agent (POST)"
-    }
+    cacheSize: qaResultsCache.size
   });
 });
 
@@ -599,7 +590,6 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log("═══════════════════════════════════════════════");
   console.log("✓ Intake QA Agent running on port", PORT);
-  console.log("✓ Health: /health");
-  console.log("✓ QA: /intake-qa-agent");
+  console.log("✓ In-memory cache enabled");
   console.log("═══════════════════════════════════════════════");
 });
