@@ -456,10 +456,16 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   const lsPayload = req.body;
   const activityId = lsPayload.ProspectActivityId || "";
-  const leadId = lsPayload.RelatedProspectId || "";
+  const leadId = lsPayload.RelatedProspectId || 
+                 lsPayload.Current?.ProspectID || 
+                 lsPayload.Current?.lead_ID || "";
+  
+  // ✅ Use BOTH activity ID and lead ID as cache keys
+  const cacheKey = activityId || leadId;
 
   console.log("Activity ID:", activityId);
   console.log("Lead ID:", leadId);
+  console.log("Cache Key:", cacheKey);
 
   if (!lsPayload.Current && !lsPayload.Data) {
     return res.json({ 
@@ -471,10 +477,10 @@ app.post("/intake-qa-agent", async (req, res) => {
   const currentKeys = Object.keys(lsPayload.Current || {});
   const dataKeys = Object.keys(lsPayload.Data || {});
   
-  // ✅ CHECK CACHE FIRST - if this is second call, return cached result
-  if (activityId && qaResultsCache.has(activityId)) {
-    console.log("✓ Returning cached QA result for activity:", activityId);
-    const cachedResult = qaResultsCache.get(activityId).result;
+  // ✅ CHECK CACHE FIRST
+  if (cacheKey && qaResultsCache.has(cacheKey)) {
+    console.log("✓ Returning cached QA result for key:", cacheKey);
+    const cachedResult = qaResultsCache.get(cacheKey).result;
     return res.json(cachedResult);
   }
 
@@ -488,7 +494,96 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   const hasVariantsOnly = currentKeys.length <= 10 && dataKeys.length === 0;
   if (hasVariantsOnly) {
-    console.log("⚠️ Variants-only payload - checking cache");
+    console.log("⚠️ Variants-only payload - checking cache with key:", cacheKey);
+    
+    if (cacheKey && qaResultsCache.has(cacheKey)) {
+      console.log("✓ Found cached result with key:", cacheKey);
+      const cachedResult = qaResultsCache.get(cacheKey).result;
+      return res.json(cachedResult);
+    }
+    
+    console.log("⚠️ No cached result found for key:", cacheKey);
+    console.log("Cache contents:", Array.from(qaResultsCache.keys()));
+    
+    return res.json({
+      status: "INTAKE_QA_COMPLETED",
+      QA_Status: "REVIEW",
+      QA_Risk_Level: "MEDIUM",
+      QA_Summary: "Application received and queued for review.",
+      QA_Key_Findings: ["Application received"],
+      QA_Concerns: ["Pending full assessment"],
+      QA_Advisory_Notes: "Complete assessment pending data availability."
+    });
+  }
+
+  try {
+    console.log("✓ Valid webhook with data detected");
+
+    const transformedPayload = transformLeadSquaredPayload(lsPayload);
+    console.log("✓ Payload transformed");
+
+    const hasMinimumData = 
+      transformedPayload.Lead.Id || 
+      transformedPayload.Activity.mx_Program_Level ||
+      transformedPayload.Activity.mx_Program_Name;
+
+    if (!hasMinimumData) {
+      console.log("⚠️ Insufficient data");
+      return res.json({
+        status: "INSUFFICIENT_DATA_POST_TRANSFORM",
+        message: "Unable to extract minimum required fields"
+      });
+    }
+
+    const context = buildApplicantContext(transformedPayload);
+    const qaResult = await runIntakeQA(context);
+    
+    console.log("✓ QA completed");
+    console.log("QA Result:", JSON.stringify(qaResult, null, 2));
+
+    const response = {
+      status: "INTAKE_QA_COMPLETED",
+      QA_Status: qaResult.QA_Status,
+      QA_Risk_Level: qaResult.QA_Risk_Level,
+      QA_Summary: qaResult.QA_Summary,
+      QA_Key_Findings: qaResult.QA_Key_Findings,
+      QA_Concerns: qaResult.QA_Concerns,
+      QA_Advisory_Notes: qaResult.QA_Advisory_Notes
+    };
+
+    // ✅ CACHE WITH BOTH KEYS
+    if (cacheKey) {
+      qaResultsCache.set(cacheKey, {
+        result: response,
+        timestamp: Date.now()
+      });
+      console.log("✓ Cached result with key:", cacheKey);
+      
+      if (activityId && leadId && activityId !== leadId) {
+        qaResultsCache.set(leadId, {
+          result: response,
+          timestamp: Date.now()
+        });
+        console.log("✓ Also cached with lead ID:", leadId);
+      }
+    }
+
+    return res.json(response);
+
+  } catch (err) {
+    console.error("❌ ERROR:", err.message);
+    return res.status(500).json({
+      status: "INTAKE_QA_FAILED",
+      error: err.message,
+      QA_Status: "REVIEW",
+      QA_Risk_Level: "HIGH",
+      QA_Summary: "System error occurred during assessment.",
+      QA_Key_Findings: ["Application received"],
+      QA_Concerns: ["System error - manual review required"],
+      QA_Advisory_Notes: "Technical issue prevented automated assessment."
+    });
+  }
+});
     
     // Check if we have a cached result
     if (activityId && qaResultsCache.has(activityId)) {
