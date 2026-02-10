@@ -45,88 +45,97 @@ const VARIANTS = {
 
 function transformLeadSquaredPayload(lsPayload) {
   const current = lsPayload.Current || {};
+  
+  // Helper function to get value from multiple possible locations
+  const getValue = (...keys) => {
+    for (const key of keys) {
+      if (current[key] !== undefined && current[key] !== null && current[key] !== '') {
+        return current[key];
+      }
+    }
+    return "";
+  };
 
   return {
     Lead: {
-      Id: current.ProspectID || current.lead_ID,
-      FirstName: current.FirstName || "",
-      LastName: current.LastName || "",
-      mx_Student_Email_ID: current.mx_Student_Email_ID || current.EmailAddress || "",
-      Phone: current.Phone || "",
-      mx_Date_of_Birth: current.mx_Date_of_Birth || "",
-      mx_Country: current.mx_Country || ""
+      Id: getValue('ProspectID', 'lead_ID'),
+      FirstName: getValue('FirstName', 'First Name'),
+      LastName: getValue('LastName', 'Last Name'),
+      mx_Student_Email_ID: getValue('mx_Student_Email_ID', 'Student Email ID', 'EmailAddress', 'Email'),
+      Phone: getValue('Phone', 'Phone Number'),
+      mx_Date_of_Birth: getValue('mx_Date_of_Birth', 'Date of Birth'),
+      mx_Country: getValue('mx_Country', 'Country')
     },
     Activity: {
       Id: lsPayload.ProspectActivityId,
-      ActivityDateTime: current.ActivityDateTime || lsPayload.CreatedOn || "",
+      ActivityDateTime: getValue('ActivityDateTime') || lsPayload.CreatedOn || "",
 
       // Program Information
-      mx_Program_Name: current.mx_Program_Name || "",
-      mx_Program_Level: current.mx_Program_Level || "",
-      mx_Intended_Intake_Term: current.mx_Intended_Intake_Term || "",
-      mx_Custom_26: current.mx_Custom_26 || "", // Mode of Study
-      mx_Custom_27: current.mx_Custom_27 || "", // Campus Preference
-      mx_Campus: current.mx_Campus || "",
+      mx_Program_Name: getValue('mx_Program_Name', 'mx_Program_Interest', 'Program Interest', 'Program Name'),
+      mx_Program_Level: getValue('mx_Program_Level', 'Program Level'),
+      mx_Intended_Intake_Term: getValue('mx_Intended_Intake_Term', 'Intended Intake Term'),
+      mx_Custom_26: getValue('mx_Custom_26', 'Mode of Study'),
+      mx_Custom_27: getValue('mx_Custom_27', 'Campus Preference'),
+      mx_Campus: getValue('mx_Campus', 'Campus'),
 
       // Citizenship & Residency
-      mx_Custom_1: current.mx_Custom_1 || "", // Citizenship Status
-      mx_Custom_4: current.mx_Custom_4 || "", // Years at Current Address
-      mx_Custom_5: current.mx_Custom_5 || "", // Residency for Tuition
+      mx_Custom_1: getValue('mx_Custom_1', 'Citizenship Status'),
+      mx_Custom_4: getValue('mx_Custom_4', 'Years at Current Address'),
+      mx_Custom_5: getValue('mx_Custom_5', 'Residency for Tuition'),
 
       // Government ID
-      mx_Custom_2: current.mx_Custom_2 || "", // Govt ID Type
-      mx_Custom_3: current.mx_Custom_3 || "", // Govt ID Last 4
+      mx_Custom_2: getValue('mx_Custom_2', 'Government ID Type', 'Govt ID Type'),
+      mx_Custom_3: getValue('mx_Custom_3', 'Govt ID Digits', 'Government ID Digits'),
 
       // High School
-      mx_Custom_6: current.mx_Custom_6 || "", // High School Name
-      mx_Custom_7: current.mx_Custom_7 || "", // School State
-      mx_Custom_8: current.mx_Custom_8 || "", // Graduation Year
-      mx_Custom_9: current.mx_Custom_9 || "", // GPA Scale
-      mx_Custom_10: current.mx_Custom_10 || "", // Final GPA
+      mx_Custom_6: getValue('mx_Custom_6', 'High School Name'),
+      mx_Custom_7: getValue('mx_Custom_7', 'School State'),
+      mx_Custom_8: getValue('mx_Custom_8', 'Graduation Year'),
+      mx_Custom_9: getValue('mx_Custom_9', 'GPA Scale'),
+      mx_Custom_10: getValue('mx_Custom_10', 'Final GPA'),
 
       // College
-      mx_Custom_42: current.mx_Custom_42 || "", // Add college info?
-      mx_Custom_37: current.mx_Custom_37 || "", // College Name
-      mx_Custom_38: current.mx_Custom_38 || "", // College State
-      mx_Custom_39: current.mx_Custom_39 || "", // Graduation Year
-      mx_Custom_40: current.mx_Custom_40 || "", // GPA Scale
-      mx_Custom_41: current.mx_Custom_41 || "", // Final GPA
+      mx_Custom_42: getValue('mx_Custom_42', 'Add College Details'),
+      mx_Custom_37: getValue('mx_Custom_37', 'College Name'),
+      mx_Custom_38: getValue('mx_Custom_38', 'College State'),
+      mx_Custom_39: getValue('mx_Custom_39', 'College Graduation Year'),
+      mx_Custom_40: getValue('mx_Custom_40', 'College GPA Scale'),
+      mx_Custom_41: getValue('mx_Custom_41', 'College Final GPA'),
 
       // Degree
-      mx_Custom_43: current.mx_Custom_43 || "", // Add degree info?
-      mx_Custom_11: current.mx_Custom_11 || "", // Degree Name
-      mx_Custom_12: current.mx_Custom_12 || "", // Institution
-      mx_Custom_13: current.mx_Custom_13 || "", // Country of Institution
-      mx_Custom_14: current.mx_Custom_14 || "", // Start Year
-      mx_Custom_15: current.mx_Custom_15 || "", // End Year
-      mx_Custom_17: current.mx_Custom_17 || "", // GPA Scale
-      mx_Custom_16: current.mx_Custom_16 || "", // Final GPA
-      mx_Custom_18: current.mx_Custom_18 || "", // Academic Issues
+      mx_Custom_43: getValue('mx_Custom_43', 'Add Degree Details'),
+      mx_Custom_11: getValue('mx_Custom_11', 'Degree Name'),
+      mx_Custom_12: getValue('mx_Custom_12', 'Institution'),
+      mx_Custom_13: getValue('mx_Custom_13', 'Country of Institution'),
+      mx_Custom_14: getValue('mx_Custom_14', 'Start Year'),
+      mx_Custom_15: getValue('mx_Custom_15', 'End Year'),
+      mx_Custom_17: getValue('mx_Custom_17', 'GPA Scale for Degree'),
+      mx_Custom_16: getValue('mx_Custom_16', 'GPA for Degree'),
+      mx_Custom_18: getValue('mx_Custom_18', 'Academic Issues'),
 
       // Financial Aid
-      mx_Custom_19: current.mx_Custom_19 || "", // FA Required
-      mx_Custom_20: current.mx_Custom_20 || "", // FAFSA Status
-      mx_Custom_21: current.mx_Custom_21 || "", // Scholarship Applied
-      mx_Custom_22: current.mx_Custom_22 || "", // Funding Source
-      mx_Custom_23: current.mx_Custom_23 || "", // Household Income Range
+      mx_Custom_19: getValue('mx_Custom_19', 'FA Required'),
+      mx_Custom_20: getValue('mx_Custom_20', 'FAFSA Status'),
+      mx_Custom_21: getValue('mx_Custom_21', 'Scholarship Applied'),
+      mx_Custom_22: getValue('mx_Custom_22', 'Funding Source'),
+      mx_Custom_23: getValue('mx_Custom_23', 'Household Income Range'),
 
       // English Proficiency
-      mx_Custom_34: current.mx_Custom_34 || "", // English Proficiency Requirement
-      mx_Custom_35: current.mx_Custom_35 || "", // English Test Type
+      mx_Custom_34: getValue('mx_Custom_34', 'English Proficiency Requiremen', 'English Proficiency Requirement'),
+      mx_Custom_35: getValue('mx_Custom_35', 'English Test Type'),
 
       // Declaration
-      mx_Custom_24: current.mx_Custom_24 || "" // Declaration
+      mx_Custom_24: getValue('mx_Custom_24', 'Declaration Accepted', 'Declaration')
     },
     Variants: {
-      HighSchool: current.mx_High_School_Transcript_Variant,
-      College: current.mx_College_Transcript_Variant,
-      Degree: current.mx_Degree_Certificate_Variant,
-      English: current.mx_English_Proficiency_Variant,
-      FAFSA: current.mx_FAFSA_Ack_Variant
+      HighSchool: getValue('mx_High_School_Transcript_Variant', 'High School Transcript'),
+      College: getValue('mx_College_Transcript_Variant', 'College Transcripts'),
+      Degree: getValue('mx_Degree_Certificate_Variant', 'Degree Certificate'),
+      English: getValue('mx_English_Proficiency_Variant', 'English Proficiency'),
+      FAFSA: getValue('mx_FAFSA_Ack_Variant', 'FAFSA Acknowledgement')
     }
   };
 }
-
 /* =====================================================
    BUILD CONTEXT FOR LLM
 ===================================================== */
