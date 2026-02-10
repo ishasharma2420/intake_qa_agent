@@ -398,8 +398,8 @@ app.post("/intake-qa-agent", async (req, res) => {
       QA_Status: qaResult.QA_Status,
       QA_Risk_Level: qaResult.QA_Risk_Level,
       QA_Summary: qaResult.QA_Summary,
-      QA_Key_Findings: qaResult.QA_Key_Findings,
-      QA_Concerns: qaResult.QA_Concerns,
+      QA_Key_Findings: JSON.stringify(qaResult.QA_Key_Findings),
+      QA_Concerns: JSON.stringify(qaResult.QA_Concerns),
       QA_Advisory_Notes: qaResult.QA_Advisory_Notes
     });
   } catch (err) {
