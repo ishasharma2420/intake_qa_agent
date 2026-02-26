@@ -4,24 +4,31 @@ import cors from "cors";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "256kb" }));
 
+const OPENAI_TIMEOUT_MS = 60_000;
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: OPENAI_TIMEOUT_MS
 });
 
 // ✅ In-memory cache for QA results
 const qaResultsCache = new Map();
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_CLEANUP_INTERVAL_MS = 60_000;
+const MAX_SUMMARY_LENGTH = 190;
+const MAX_SUMMARY_TRUNCATE = 200;
+
 // Clean up old cache entries (older than 5 minutes)
 setInterval(() => {
-  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  const fiveMinutesAgo = Date.now() - CACHE_TTL_MS;
   for (const [key, value] of qaResultsCache.entries()) {
     if (value.timestamp < fiveMinutesAgo) {
       qaResultsCache.delete(key);
     }
   }
-}, 60000);
+}, CACHE_CLEANUP_INTERVAL_MS);
 
 const VARIANTS = {
   HIGH_SCHOOL_TRANSCRIPT: {
@@ -48,9 +55,17 @@ const VARIANTS = {
   }
 };
 
+// ──────────────────────────────────────────────────────────────────────
+// FIX 1: Dummy file uploads are IGNORED.
+// A file reference string from LeadSquared doesn't mean the doc is valid.
+// Only an explicit variant field (V1-V4) set by form logic or automation
+// counts as a real document submission. Raw file presence is ignored.
+// Changed: return "" instead of "V2" so a dummy upload without an
+// explicit variant does NOT auto-pass as "Average performance".
+// ──────────────────────────────────────────────────────────────────────
 const inferTranscriptVariant = (file) => {
   if (!file || file === "" || file === "Not Uploaded") return "";
-  return "V2";
+  return "";
 };
 
 function transformLeadSquaredPayload(lsPayload) {
@@ -139,9 +154,11 @@ function transformLeadSquaredPayload(lsPayload) {
 function buildApplicantContext(payload) {
   const { Lead = {}, Activity = {}, Variants = {} } = payload;
 
+  // FIX 2: English exemption regex — exact match so "Russia", "Belarus",
+  // "Cyprus" etc. don't falsely match the /us/ pattern.
   const isEnglishExempt =
     /us citizen|permanent resident|green card/i.test(Activity.mx_Custom_1) ||
-    /united states|usa|us/i.test(Lead.mx_Country);
+    /^(united states|usa|us)$/i.test((Lead.mx_Country || "").trim());
 
   const englishSection = isEnglishExempt
     ? "ENGLISH PROFICIENCY\nExempt based on citizenship.\n"
@@ -150,6 +167,18 @@ ENGLISH PROFICIENCY
 English Proficiency Requirement: ${Activity.mx_Custom_34 || "Not specified"}
 English Test Type: ${Activity.mx_Custom_35 || "Not specified"}
 English Proficiency Status: ${VARIANTS.YES_NO[Variants.English] || "Not applicable"}
+`;
+
+  // FIX 3: Explicit DOCUMENT UPLOAD STATUS section in the context.
+  // Tells OpenAI exactly what documents are validated based on variants ONLY.
+  // Raw file attachments are irrelevant — variant field IS the source of truth.
+  const docStatusSection = `
+DOCUMENT UPLOAD STATUS (based on validated variants — raw file attachments are ignored)
+High School Transcript: ${Variants.HighSchool ? `Variant ${Variants.HighSchool} — ${VARIANTS.HIGH_SCHOOL_TRANSCRIPT[Variants.HighSchool] || "Unknown variant"}` : "NOT VALIDATED (no variant set, treat as not submitted)"}
+College Transcript: ${Variants.College ? `Variant ${Variants.College} — ${VARIANTS.COLLEGE_TRANSCRIPT[Variants.College] || "Unknown variant"}` : "NOT VALIDATED (no variant set)"}
+Degree Certificate: ${Variants.Degree ? `Variant ${Variants.Degree} — ${VARIANTS.DEGREE_CERTIFICATE[Variants.Degree] || "Unknown variant"}` : "NOT VALIDATED (no variant set)"}
+English Proficiency: ${Variants.English ? VARIANTS.YES_NO[Variants.English] || "Unknown" : "NOT VALIDATED (no variant set)"}
+FAFSA Acknowledgement: ${Variants.FAFSA ? VARIANTS.YES_NO[Variants.FAFSA] || "Unknown" : "NOT VALIDATED (no variant set)"}
 `;
 
   return `
@@ -212,6 +241,8 @@ FAFSA Acknowledgement: ${VARIANTS.YES_NO[Variants.FAFSA] || "Not submitted"}
 
 ${englishSection}
 
+${docStatusSection}
+
 DECLARATION
 Declaration: ${Activity.mx_Custom_24 || "Not completed"}
 Submission Timestamp: ${Activity.ActivityDateTime || "Not recorded"}
@@ -221,6 +252,22 @@ Submission Timestamp: ${Activity.ActivityDateTime || "Not recorded"}
 async function runIntakeQA(context) {
   const systemPrompt = `
 You are a University Admissions Intake QA Agent. Follow these rules EXACTLY as written.
+
+═══════════════════════════════════════════════════════════════════════════
+CRITICAL: DOCUMENT VALIDATION APPROACH
+═══════════════════════════════════════════════════════════════════════════
+
+This system validates documents using STRUCTURED METADATA (variant fields),
+NOT by reading or parsing uploaded files. Even if a file was uploaded, it
+is only considered "submitted" if a variant (V1/V2/V3/V4) has been set.
+
+If a document's variant is missing or says "NOT VALIDATED":
+- Treat it as NOT SUBMITTED regardless of any file upload reference
+- Flag it as: "Document not validated — variant not set"
+
+If a document's variant IS set (V1-V4):
+- Use the variant meaning to assess document quality
+- The variant IS the validation result
 
 ═══════════════════════════════════════════════════════════════════════════
 CRITICAL RULE #1: UNDERGRADUATE APPLICATIONS
@@ -263,7 +310,7 @@ Transcript Status Meanings:
 - V2 = "Average performance" → ACCEPTABLE
 - V3 = "Low performance with failed subjects" → Flag as concern
 - V4 = "Incomplete transcript" OR "Under verification" → Flag as "Pending verification"
-- "Not submitted" = Missing document → Flag as missing
+- "Not submitted" or "NOT VALIDATED" = Missing document → Flag as missing
 
 IMPORTANT: If transcript status is V4, say "Transcript pending verification" NOT "under verification"
 
@@ -355,6 +402,7 @@ FORBIDDEN ACTIONS
 ✗ DO NOT use vague advisory notes
 ✗ DO NOT return empty QA_Key_Findings array
 ✗ DO NOT use FAIL status for Undergraduate applications
+✗ DO NOT treat a raw file upload as document validation — only variants count
 
 ═══════════════════════════════════════════════════════════════════════════
 JSON OUTPUT SCHEMA
@@ -372,18 +420,29 @@ JSON OUTPUT SCHEMA
 OUTPUT ONLY VALID JSON. NO PREAMBLE.
 `;
 
+  // FIX 4: response_format guarantees valid JSON from OpenAI.
+  // Eliminates edge case where gpt-4o-mini wraps output in code fences.
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
+    response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: context }
     ]
   });
 
-  const result = JSON.parse(response.choices[0].message.content);
+  const rawContent = response.choices[0]?.message?.content?.trim() || "";
+  let result = parseQAJson(rawContent);
+  if (!result) {
+    return getFallbackQAResult("REVIEW", "MEDIUM", "Unable to parse QA result.");
+  }
 
-  if (/undergraduate|ug/i.test(context) && result.QA_Status === "FAIL") {
+  // FIX 5: UG override matches the Program Level field specifically,
+  // not the entire context (which could match "ug" in "Douglas" etc.)
+  const programLevelMatch = context.match(/Program Level:\s*(.+)/i);
+  const programLevelValue = programLevelMatch ? programLevelMatch[1].trim() : "";
+  if (/undergraduate|^ug$/i.test(programLevelValue) && result.QA_Status === "FAIL") {
     result.QA_Status = "REVIEW";
     if (result.QA_Risk_Level === "HIGH") {
       result.QA_Risk_Level = "MEDIUM";
@@ -391,11 +450,11 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
   }
 
   ["QA_Summary", "QA_Advisory_Notes"].forEach(key => {
-    if (result[key]?.length > 200) {
-      let text = result[key].slice(0, 197);
-      const lastPeriod = text.lastIndexOf('.');
-      const lastExclaim = text.lastIndexOf('!');
-      const lastQuestion = text.lastIndexOf('?');
+    if (result[key]?.length > MAX_SUMMARY_TRUNCATE) {
+      let text = String(result[key]).slice(0, MAX_SUMMARY_TRUNCATE - 3);
+      const lastPeriod = text.lastIndexOf(".");
+      const lastExclaim = text.lastIndexOf("!");
+      const lastQuestion = text.lastIndexOf("?");
       const lastSentenceEnd = Math.max(lastPeriod, lastExclaim, lastQuestion);
 
       if (lastSentenceEnd > 0) {
@@ -406,11 +465,54 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
     }
   });
 
-  if (!result.QA_Key_Findings || result.QA_Key_Findings.length === 0) {
-    result.QA_Key_Findings = ["Application received for review"];
-  }
+  return normalizeQAResult(result);
+}
 
-  return result;
+function parseQAJson(raw) {
+  if (!raw) return null;
+  let str = raw.trim();
+  const codeBlock = str.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlock) str = codeBlock[1].trim();
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
+function getFallbackQAResult(status, riskLevel, summary) {
+  return {
+    QA_Status: status,
+    QA_Risk_Level: riskLevel,
+    QA_Summary: summary,
+    QA_Key_Findings: ["Application received for review"],
+    QA_Concerns: ["Assessment incomplete – manual review recommended."],
+    QA_Advisory_Notes: "Please complete manual review of this application."
+  };
+}
+
+function normalizeQAResult(result) {
+  const validStatus = ["PASS", "REVIEW", "FAIL"].includes(result.QA_Status)
+    ? result.QA_Status
+    : "REVIEW";
+  const validRisk = ["LOW", "MEDIUM", "HIGH"].includes(result.QA_Risk_Level)
+    ? result.QA_Risk_Level
+    : "MEDIUM";
+  const keyFindings = Array.isArray(result.QA_Key_Findings)
+    ? result.QA_Key_Findings.filter(Boolean).map(String)
+    : [];
+  const concerns = Array.isArray(result.QA_Concerns)
+    ? result.QA_Concerns.filter(Boolean).map(String)
+    : [];
+
+  return {
+    QA_Status: validStatus,
+    QA_Risk_Level: validRisk,
+    QA_Summary: String(result.QA_Summary ?? "").slice(0, MAX_SUMMARY_LENGTH) || "Application under review.",
+    QA_Key_Findings: keyFindings.length > 0 ? keyFindings : ["Application received for review"],
+    QA_Concerns: concerns,
+    QA_Advisory_Notes: String(result.QA_Advisory_Notes ?? "").slice(0, MAX_SUMMARY_LENGTH) || "No additional notes."
+  };
 }
 
 app.post("/intake-qa-agent", async (req, res) => {
@@ -455,16 +557,8 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   const hasVariantsOnly = currentKeys.length <= 10 && dataKeys.length === 0;
   if (hasVariantsOnly) {
-    console.log("⚠️ Variants-only payload - checking cache with key:", cacheKey);
-    
-    if (cacheKey && qaResultsCache.has(cacheKey)) {
-      console.log("✓ Found cached result with key:", cacheKey);
-      const cachedResult = qaResultsCache.get(cacheKey).result;
-      return res.json(cachedResult);
-    }
-    
-    console.log("⚠️ No cached result found for key:", cacheKey);
-    console.log("Cache contents:", Array.from(qaResultsCache.keys()));
+    // FIX 6: Removed duplicate cache check — already handled above.
+    console.log("⚠️ Variants-only payload, no cache hit for key:", cacheKey);
     
     return res.json({
       status: "INTAKE_QA_COMPLETED",
@@ -482,6 +576,8 @@ app.post("/intake-qa-agent", async (req, res) => {
 
     const transformedPayload = transformLeadSquaredPayload(lsPayload);
     console.log("✓ Payload transformed");
+    // FIX 7: Log variants so you can see what Sherlock is actually working with
+    console.log("✓ Variants resolved:", JSON.stringify(transformedPayload.Variants));
 
     const hasMinimumData = 
       transformedPayload.Lead.Id || 
