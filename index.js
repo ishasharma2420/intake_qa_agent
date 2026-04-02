@@ -30,24 +30,18 @@ setInterval(() => {
   }
 }, CACHE_CLEANUP_INTERVAL_MS);
 
+// ──────────────────────────────────────────────────────────────────────
+// VARIANT DEFINITIONS — Career School Context
+// Career schools require a high school diploma or GED for admission.
+// College transcripts and degree certificates are NOT part of the
+// standard career school intake process.
+// ──────────────────────────────────────────────────────────────────────
 const VARIANTS = {
-  HIGH_SCHOOL_TRANSCRIPT: {
-    V1: "Strong academic performance with consistent grades.",
-    V2: "Average performance with no disciplinary issues.",
-    V3: "Low performance with multiple failed subjects.",
-    V4: "Incomplete transcript with missing semesters."
-  },
-  COLLEGE_TRANSCRIPT: {
-    V1: "High GPA with no backlogs.",
-    V2: "Low GPA with multiple backlogs and gap years.",
-    V3: "Moderate GPA with limited backlogs.",
-    V4: "Transcript submitted but under verification."
-  },
-  DEGREE_CERTIFICATE: {
-    V1: "Degree completed with honors.",
-    V2: "Degree completed.",
-    V3: "Degree completed and verified.",
-    V4: "Degree certificate pending verification."
+  HIGH_SCHOOL_DIPLOMA: {
+    V1: "High school diploma verified with strong academic record.",
+    V2: "High school diploma verified with satisfactory record.",
+    V3: "GED or equivalency certificate submitted.",
+    V4: "Diploma or equivalency document pending verification."
   },
   YES_NO: {
     Positive: "Requirement met.",
@@ -60,10 +54,8 @@ const VARIANTS = {
 // A file reference string from LeadSquared doesn't mean the doc is valid.
 // Only an explicit variant field (V1-V4) set by form logic or automation
 // counts as a real document submission. Raw file presence is ignored.
-// Changed: return "" instead of "V2" so a dummy upload without an
-// explicit variant does NOT auto-pass as "Average performance".
 // ──────────────────────────────────────────────────────────────────────
-const inferTranscriptVariant = (file) => {
+const inferDiplomaVariant = (file) => {
   if (!file || file === "" || file === "Not Uploaded") return "";
   return "";
 };
@@ -102,7 +94,7 @@ function transformLeadSquaredPayload(lsPayload) {
       Id: lsPayload.ProspectActivityId || "",
       ActivityDateTime: getValue('ActivityDateTime', 'CreatedOn') || lsPayload.CreatedOn || "",
       mx_Program_Name: getValue('mx_Program_Name', 'mx_Program_Interest', 'Program Interest', 'Program Name'),
-      mx_Program_Level: getValue('mx_Program_Level', 'Program Level'),
+      mx_Enrollment_Status: getValue('mx_Enrollment_Status', 'Enrollment Status'),
       mx_Intended_Intake_Term: getValue('mx_Intended_Intake_Term', 'Intended Intake Term'),
       mx_Custom_26: getValue('mx_Custom_26', 'Mode of Study'),
       mx_Custom_27: getValue('mx_Custom_27', 'Campus Preference'),
@@ -117,20 +109,6 @@ function transformLeadSquaredPayload(lsPayload) {
       mx_Custom_8: getValue('mx_Custom_8', 'Graduation Year'),
       mx_Custom_9: getValue('mx_Custom_9', 'GPA Scale'),
       mx_Custom_10: getValue('mx_Custom_10', 'Final GPA'),
-      mx_Custom_42: getValue('mx_Custom_42', 'Add College Details'),
-      mx_Custom_37: getValue('mx_Custom_37', 'College Name'),
-      mx_Custom_38: getValue('mx_Custom_38', 'College State'),
-      mx_Custom_39: getValue('mx_Custom_39', 'College Graduation Year'),
-      mx_Custom_40: getValue('mx_Custom_40', 'College GPA Scale'),
-      mx_Custom_41: getValue('mx_Custom_41', 'College Final GPA'),
-      mx_Custom_43: getValue('mx_Custom_43', 'Add Degree Details'),
-      mx_Custom_11: getValue('mx_Custom_11', 'Degree Name'),
-      mx_Custom_12: getValue('mx_Custom_12', 'Institution'),
-      mx_Custom_13: getValue('mx_Custom_13', 'Country of Institution'),
-      mx_Custom_14: getValue('mx_Custom_14', 'Start Year'),
-      mx_Custom_15: getValue('mx_Custom_15', 'End Year'),
-      mx_Custom_17: getValue('mx_Custom_17', 'GPA Scale for Degree'),
-      mx_Custom_16: getValue('mx_Custom_16', 'GPA for Degree'),
       mx_Custom_18: getValue('mx_Custom_18', 'Academic Issues'),
       mx_Custom_19: getValue('mx_Custom_19', 'FA Required'),
       mx_Custom_20: getValue('mx_Custom_20', 'FAFSA Status'),
@@ -142,9 +120,7 @@ function transformLeadSquaredPayload(lsPayload) {
       mx_Custom_24: getValue('mx_Custom_24', 'Declaration Accepted', 'Declaration')
     },
     Variants: {
-      HighSchool: getValue('mx_High_School_Transcript_Variant') || inferTranscriptVariant(getValue('High School Transcript')),
-      College: getValue('mx_College_Transcript_Variant'),
-      Degree: getValue('mx_Degree_Certificate_Variant'),
+      HighSchoolDiploma: getValue('mx_High_School_Transcript_Variant') || inferDiplomaVariant(getValue('High School Transcript')),
       English: getValue('mx_English_Proficiency_Variant'),
       FAFSA: getValue('mx_FAFSA_Ack_Variant')
     }
@@ -169,14 +145,12 @@ English Test Type: ${Activity.mx_Custom_35 || "Not specified"}
 English Proficiency Status: ${VARIANTS.YES_NO[Variants.English] || "Not applicable"}
 `;
 
-  // FIX 3: Explicit DOCUMENT UPLOAD STATUS section in the context.
-  // Tells OpenAI exactly what documents are validated based on variants ONLY.
+  // FIX 3: Explicit DOCUMENT STATUS section in the context.
+  // Tells the LLM exactly what documents are validated based on variants ONLY.
   // Raw file attachments are irrelevant — variant field IS the source of truth.
   const docStatusSection = `
-DOCUMENT UPLOAD STATUS (based on validated variants — raw file attachments are ignored)
-High School Transcript: ${Variants.HighSchool ? `Variant ${Variants.HighSchool} — ${VARIANTS.HIGH_SCHOOL_TRANSCRIPT[Variants.HighSchool] || "Unknown variant"}` : "NOT VALIDATED (no variant set, treat as not submitted)"}
-College Transcript: ${Variants.College ? `Variant ${Variants.College} — ${VARIANTS.COLLEGE_TRANSCRIPT[Variants.College] || "Unknown variant"}` : "NOT VALIDATED (no variant set)"}
-Degree Certificate: ${Variants.Degree ? `Variant ${Variants.Degree} — ${VARIANTS.DEGREE_CERTIFICATE[Variants.Degree] || "Unknown variant"}` : "NOT VALIDATED (no variant set)"}
+DOCUMENT STATUS (based on validated variants — raw file attachments are ignored)
+High School Diploma/GED: ${Variants.HighSchoolDiploma ? `Variant ${Variants.HighSchoolDiploma} — ${VARIANTS.HIGH_SCHOOL_DIPLOMA[Variants.HighSchoolDiploma] || "Unknown variant"}` : "NOT VALIDATED (no variant set, treat as not submitted)"}
 English Proficiency: ${Variants.English ? VARIANTS.YES_NO[Variants.English] || "Unknown" : "NOT VALIDATED (no variant set)"}
 FAFSA Acknowledgement: ${Variants.FAFSA ? VARIANTS.YES_NO[Variants.FAFSA] || "Unknown" : "NOT VALIDATED (no variant set)"}
 `;
@@ -190,9 +164,9 @@ Date of Birth: ${Lead.mx_Date_of_Birth || "Not provided"}
 Country: ${Lead.mx_Country || "Not provided"}
 
 PROGRAM INFORMATION
-Program: ${Activity.mx_Program_Name || "Not specified"}
-Program Level: ${Activity.mx_Program_Level || "Not specified"}
-Intended Intake Term: ${Activity.mx_Intended_Intake_Term || "Not specified"}
+Program of Interest: ${Activity.mx_Program_Name || "Not specified"}
+Enrollment Status: ${Activity.mx_Enrollment_Status || "Not specified"}
+Intended Start Term: ${Activity.mx_Intended_Intake_Term || "Not specified"}
 Mode of Study: ${Activity.mx_Custom_26 || "Not specified"}
 Campus Preference: ${Activity.mx_Custom_27 || "Not specified"}
 Campus: ${Activity.mx_Campus || "Not specified"}
@@ -202,34 +176,16 @@ Citizenship Status: ${Activity.mx_Custom_1 || "Not specified"}
 Years at Current Address: ${Activity.mx_Custom_4 || "Not provided"}
 Residency for Tuition: ${Activity.mx_Custom_5 || "Not specified"}
 
-HIGH SCHOOL ACADEMIC RECORD
+HIGH SCHOOL DIPLOMA / GED
 High School Name: ${Activity.mx_Custom_6 || "Not provided"}
 School State: ${Activity.mx_Custom_7 || "Not provided"}
 Graduation Year: ${Activity.mx_Custom_8 || "Not provided"}
 GPA Scale: ${Activity.mx_Custom_9 || "Not provided"}
 Final GPA (Declared): ${Activity.mx_Custom_10 || "Not provided"}
-High School Transcript Status: ${VARIANTS.HIGH_SCHOOL_TRANSCRIPT[Variants.HighSchool] || "Not submitted"}
+Diploma/GED Status: ${VARIANTS.HIGH_SCHOOL_DIPLOMA[Variants.HighSchoolDiploma] || "Not submitted"}
 
-COLLEGE ACADEMIC RECORD (if applicable)
-Add College Information: ${Activity.mx_Custom_42 || "Not specified"}
-College Name: ${Activity.mx_Custom_37 || "Not provided"}
-College State: ${Activity.mx_Custom_38 || "Not provided"}
-Graduation Year: ${Activity.mx_Custom_39 || "Not provided"}
-GPA Scale: ${Activity.mx_Custom_40 || "Not provided"}
-Final GPA: ${Activity.mx_Custom_41 || "Not provided"}
-College Transcript Status: ${VARIANTS.COLLEGE_TRANSCRIPT[Variants.College] || "Not submitted"}
-
-DEGREE INFORMATION (if applicable)
-Add Degree Information: ${Activity.mx_Custom_43 || "Not specified"}
-Degree Name: ${Activity.mx_Custom_11 || "Not provided"}
-Institution: ${Activity.mx_Custom_12 || "Not provided"}
-Country of Institution: ${Activity.mx_Custom_13 || "Not provided"}
-Start Year: ${Activity.mx_Custom_14 || "Not provided"}
-End Year: ${Activity.mx_Custom_15 || "Not provided"}
-GPA Scale: ${Activity.mx_Custom_17 || "Not provided"}
-Final GPA (Declared): ${Activity.mx_Custom_16 || "Not provided"}
+ACADEMIC HISTORY
 Academic Issues: ${Activity.mx_Custom_18 || "None"}
-Degree Certificate Status: ${VARIANTS.DEGREE_CERTIFICATE[Variants.Degree] || "Not submitted"}
 
 FINANCIAL AID
 Financial Aid Required: ${Activity.mx_Custom_19 || "Not specified"}
@@ -251,7 +207,14 @@ Submission Timestamp: ${Activity.ActivityDateTime || "Not recorded"}
 
 async function runIntakeQA(context) {
   const systemPrompt = `
-You are a University Admissions Intake QA Agent. Follow these rules EXACTLY as written.
+You are an Enrollment Intake QA Agent for a career school. You review applicant
+records for completeness, accuracy, and enrollment readiness. These are
+vocational and technical training programs (Medical Assisting, HVAC, Cosmetology,
+Automotive, Welding, Dental Hygiene, Nursing, Trade Programs, Computer and
+Network Technology). Applicants are enrolling in certificate or diploma programs,
+NOT traditional university degree programs.
+
+Follow these rules EXACTLY as written.
 
 ═══════════════════════════════════════════════════════════════════════════
 CRITICAL: DOCUMENT VALIDATION APPROACH
@@ -270,30 +233,35 @@ If a document's variant IS set (V1-V4):
 - The variant IS the validation result
 
 ═══════════════════════════════════════════════════════════════════════════
-CRITICAL RULE #1: UNDERGRADUATE APPLICATIONS
+RULE #1: CAREER SCHOOL ADMISSION REQUIREMENTS
 ═══════════════════════════════════════════════════════════════════════════
 
-IF Program Level contains "Undergraduate" OR "UG":
-- College information is OPTIONAL and NOT REQUIRED
-- Degree information is OPTIONAL and NOT REQUIRED
-- If "Add College Details = No" → This is NORMAL, DO NOT flag as missing
-- If "Add Degree Details = No" → This is NORMAL, DO NOT flag as missing
-- DO NOT mention "missing college information" in QA_Concerns
-- DO NOT mention "missing degree information" in QA_Concerns
+Career school applicants must meet these requirements:
+✓ High School Diploma or GED (must be verified via variant)
+✓ High School Name or equivalent (must be present)
+✓ Graduation Year (must be present)
+✓ Declaration accepted
 
-ONLY REQUIRED FOR UNDERGRADUATE:
-✓ High School Name (must be present)
-✓ High School Graduation Year (must be present)
-✓ High School GPA (must be present)
-✓ High School GPA Scale (must be present)
-✓ High School Transcript Status (must not be "Not submitted")
+These are OPTIONAL and should NOT be flagged if missing:
+- GPA / GPA Scale (some career schools do not require this)
+- English proficiency (if exempt based on citizenship)
 
-IF ALL 5 UNDERGRADUATE REQUIREMENTS ARE MET:
+IF ALL REQUIRED FIELDS ARE MET:
 - DO NOT say "mandatory fields missing"
-- QA_Summary should NOT mention missing mandatory fields
+- QA_Summary should confirm application completeness
 
 ═══════════════════════════════════════════════════════════════════════════
-CRITICAL RULE #2: ENGLISH PROFICIENCY EXEMPTIONS
+RULE #2: ENROLLMENT STATUS CROSS-VALIDATION
+═══════════════════════════════════════════════════════════════════════════
+
+IF Enrollment Status is present, cross-check it against the record:
+- "Enrollment Complete" but required documents missing → Flag mismatch
+- "Documents Pending" with all documents validated → Note ready to advance
+- "Scheduled to Start" but missing financial aid → Flag risk
+- "Application Submitted" → Standard intake review applies
+
+═══════════════════════════════════════════════════════════════════════════
+RULE #3: ENGLISH PROFICIENCY EXEMPTIONS
 ═══════════════════════════════════════════════════════════════════════════
 
 IF THE CONTEXT SAYS "Exempt based on citizenship":
@@ -302,27 +270,15 @@ IF THE CONTEXT SAYS "Exempt based on citizenship":
 - DO NOT flag missing English requirements
 
 ═══════════════════════════════════════════════════════════════════════════
-RULE #3: DOCUMENT VARIANT INTERPRETATION
+RULE #4: DOCUMENT VARIANT INTERPRETATION
 ═══════════════════════════════════════════════════════════════════════════
 
-Transcript Status Meanings:
-- V1 = "Strong academic performance" → POSITIVE
-- V2 = "Average performance" → ACCEPTABLE
-- V3 = "Low performance with failed subjects" → Flag as concern
-- V4 = "Incomplete transcript" OR "Under verification" → Flag as "Pending verification"
+High School Diploma/GED Status Meanings:
+- V1 = "Diploma verified with strong academic record" → POSITIVE
+- V2 = "Diploma verified with satisfactory record" → ACCEPTABLE
+- V3 = "GED or equivalency submitted" → ACCEPTABLE (flag for verification)
+- V4 = "Diploma or equivalency pending verification" → Flag as "Pending verification"
 - "Not submitted" or "NOT VALIDATED" = Missing document → Flag as missing
-
-IMPORTANT: If transcript status is V4, say "Transcript pending verification" NOT "under verification"
-
-═══════════════════════════════════════════════════════════════════════════
-RULE #4: ACADEMIC ISSUES
-═══════════════════════════════════════════════════════════════════════════
-
-"Backlogs" = Previously failed courses (now cleared):
-- This raises Risk Level to MEDIUM
-- Flag as: "Academic history includes resolved backlogs"
-- DO NOT say just "Backlogs present" (implies current issue)
-- This is a CONCERN but NOT a failure
 
 ═══════════════════════════════════════════════════════════════════════════
 RULE #5: FINANCIAL AID
@@ -340,69 +296,80 @@ RULE #6: QA_STATUS DECISION
 ═══════════════════════════════════════════════════════════════════════════
 
 PASS:
-- All required fields for program level are present
+- All required fields present
+- Diploma/GED verified
 - No major concerns
-- Acceptable academic standing
+- Enrollment Status consistent with record
 
 REVIEW (Use when):
 - Minor inconsistencies exist
-- Some documents pending verification
-- Academic issues (backlogs) present
+- Documents pending verification
 - Financial aid incomplete
+- Enrollment Status mismatch detected
 
 FAIL:
-- NEVER use for Undergraduate applications
-- NEVER use for missing optional fields
-- Only for major contradictions
+- Only for serious contradictions or disqualifying issues
+- Example: Applicant under 17 with no GED/diploma
+- Example: Declaration not accepted AND critical documents missing
 
 ═══════════════════════════════════════════════════════════════════════════
 RULE #7: OUTPUT CLARITY
 ═══════════════════════════════════════════════════════════════════════════
 
+TERMINOLOGY — USE THESE TERMS ONLY:
+- "Applicant" (never "student", "undergraduate", "graduate")
+- "Application" (never "admission", "enrollment application")
+- "Program" (never "degree", "degree program", "major")
+- "Program completion" (never "graduation" unless referring to high school)
+- "Enrollment" (never "admission")
+- "Campus" (never "university", "college")
+
 QA_Summary:
 - Max 190 characters
 - Be ACCURATE about what's actually missing
-- For UG with all required fields: "Undergraduate application meets basic requirements"
+- Example: "Application for Medical Assisting at Los Angeles Campus meets all requirements."
+- Example: "Applicant missing diploma verification. FAFSA not started."
 - DO NOT say "mandatory fields missing" if they're not actually missing
 
 QA_Key_Findings:
-- 2-4 POSITIVE observations
+- 2-4 POSITIVE observations about the application
 - Examples:
-  * "All required undergraduate documents submitted"
-  * "US Citizen - no English proficiency requirement"
-  * "High school GPA of X on Y scale meets minimum standards"
+  * "High school diploma verified with satisfactory record"
+  * "US Citizen — no English proficiency requirement"
+  * "Financial aid documentation complete"
+  * "All required enrollment documents submitted"
 
 QA_Concerns:
-- ONLY list ACTUAL problems
+- ONLY list ACTUAL problems found in the record
 - Be SPECIFIC about what's wrong
 - Examples:
-  * "High school transcript shows low performance with failed subjects"
+  * "Diploma/GED document not yet validated — variant not set"
   * "FAFSA application required but not yet started"
-  * "Academic history includes resolved backlogs"
-- DO NOT list:
-  * "Missing college information" for UG students
-  * "Missing degree information" for UG students
-  * English proficiency for US Citizens
+  * "Enrollment Status marked as Enrollment Complete but diploma not verified"
+- DO NOT list items that are optional or not applicable
 
 QA_Advisory_Notes:
 - Max 190 characters
-- Give SPECIFIC next steps
+- Give SPECIFIC next steps for the admissions team
 - Examples:
-  * "Applicant should initiate FAFSA application to complete financial aid requirements."
-  * "Request official verification of high school transcript status."
-- DO NOT say vague things like "Ensure to provide college details" for UG students
+  * "Applicant should submit high school diploma or GED for verification."
+  * "Initiate FAFSA application to complete financial aid requirements."
+  * "Verify diploma status before advancing to Scheduled to Start."
 
 ═══════════════════════════════════════════════════════════════════════════
 FORBIDDEN ACTIONS
 ═══════════════════════════════════════════════════════════════════════════
 
-✗ DO NOT flag missing college/degree info for Undergraduate students
+✗ DO NOT use terms: "undergraduate", "graduate", "postgraduate", "UG", "PG",
+  "Masters", "Doctoral", "degree program", "graduation" (except high school),
+  "college transcript", "degree certificate"
 ✗ DO NOT flag English proficiency for US Citizens/Permanent Residents
 ✗ DO NOT say "mandatory fields missing" when they're not
 ✗ DO NOT use vague advisory notes
 ✗ DO NOT return empty QA_Key_Findings array
-✗ DO NOT use FAIL status for Undergraduate applications
 ✗ DO NOT treat a raw file upload as document validation — only variants count
+✗ DO NOT reference college or degree information — career school applicants
+  are enrolling in certificate/diploma programs
 
 ═══════════════════════════════════════════════════════════════════════════
 JSON OUTPUT SCHEMA
@@ -421,7 +388,6 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
 `;
 
   // FIX 4: response_format guarantees valid JSON from OpenAI.
-  // Eliminates edge case where gpt-4o-mini wraps output in code fences.
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
@@ -436,17 +402,6 @@ OUTPUT ONLY VALID JSON. NO PREAMBLE.
   let result = parseQAJson(rawContent);
   if (!result) {
     return getFallbackQAResult("REVIEW", "MEDIUM", "Unable to parse QA result.");
-  }
-
-  // FIX 5: UG override matches the Program Level field specifically,
-  // not the entire context (which could match "ug" in "Douglas" etc.)
-  const programLevelMatch = context.match(/Program Level:\s*(.+)/i);
-  const programLevelValue = programLevelMatch ? programLevelMatch[1].trim() : "";
-  if (/undergraduate|^ug$/i.test(programLevelValue) && result.QA_Status === "FAIL") {
-    result.QA_Status = "REVIEW";
-    if (result.QA_Risk_Level === "HIGH") {
-      result.QA_Risk_Level = "MEDIUM";
-    }
   }
 
   ["QA_Summary", "QA_Advisory_Notes"].forEach(key => {
@@ -486,7 +441,7 @@ function getFallbackQAResult(status, riskLevel, summary) {
     QA_Risk_Level: riskLevel,
     QA_Summary: summary,
     QA_Key_Findings: ["Application received for review"],
-    QA_Concerns: ["Assessment incomplete – manual review recommended."],
+    QA_Concerns: ["Assessment incomplete — manual review recommended."],
     QA_Advisory_Notes: "Please complete manual review of this application."
   };
 }
@@ -557,7 +512,6 @@ app.post("/intake-qa-agent", async (req, res) => {
 
   const hasVariantsOnly = currentKeys.length <= 10 && dataKeys.length === 0;
   if (hasVariantsOnly) {
-    // FIX 6: Removed duplicate cache check — already handled above.
     console.log("⚠️ Variants-only payload, no cache hit for key:", cacheKey);
     
     return res.json({
@@ -576,12 +530,10 @@ app.post("/intake-qa-agent", async (req, res) => {
 
     const transformedPayload = transformLeadSquaredPayload(lsPayload);
     console.log("✓ Payload transformed");
-    // FIX 7: Log variants so you can see what Sherlock is actually working with
     console.log("✓ Variants resolved:", JSON.stringify(transformedPayload.Variants));
 
     const hasMinimumData = 
       transformedPayload.Lead.Id || 
-      transformedPayload.Activity.mx_Program_Level ||
       transformedPayload.Activity.mx_Program_Name;
 
     if (!hasMinimumData) {
@@ -635,7 +587,7 @@ app.post("/intake-qa-agent", async (req, res) => {
       QA_Risk_Level: "HIGH",
       QA_Summary: "System error occurred during assessment.",
       QA_Key_Findings: ["Application received"],
-      QA_Concerns: ["System error - manual review required"],
+      QA_Concerns: ["System error — manual review required"],
       QA_Advisory_Notes: "Technical issue prevented automated assessment."
     });
   }
@@ -651,7 +603,7 @@ app.get("/health", (req, res) => {
 
 app.get("/", (req, res) => {
   res.json({
-    service: "Intake QA Agent API",
+    service: "Enrollment Intake QA Agent — Career School",
     status: "running",
     cacheSize: qaResultsCache.size
   });
@@ -660,7 +612,7 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log("═══════════════════════════════════════════════");
-  console.log("✓ Intake QA Agent running on port", PORT);
+  console.log("✓ Enrollment Intake QA Agent running on port", PORT);
   console.log("✓ In-memory cache enabled");
   console.log("═══════════════════════════════════════════════");
 });
