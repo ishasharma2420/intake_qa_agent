@@ -2,7 +2,7 @@
   "name": "intake-qa-agent",
   "version": "1.0.0",
   "type": "module",
-  "description": "University Admissions Intake QA Agent",
+  "description": "Enrollment Intake QA Agent — Career School",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
